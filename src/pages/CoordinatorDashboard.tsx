@@ -31,6 +31,8 @@ interface RecentJob {
   application_count: number;
   status: string;
   created_at: string;
+  created_by_type?: 'coordinator' | 'company';
+  created_by_name?: string;
 }
 
 interface RecentApplication {
@@ -54,6 +56,7 @@ export const CoordinatorDashboard: React.FC = () => {
   const [recentJobs, setRecentJobs] = useState<RecentJob[]>([]);
   const [recentApplications, setRecentApplications] = useState<RecentApplication[]>([]);
   const [coordinatorName, setCoordinatorName] = useState<string>('');
+  const [affiliatedCompanyJobs, setAffiliatedCompanyJobs] = useState<RecentJob[]>([]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -64,38 +67,57 @@ export const CoordinatorDashboard: React.FC = () => {
       setLoading(true);
       
       // Fetch coordinator profile info
-      const profileResponse = await api.get('/coordinator/profile');
+      const profileResponse = await api.get('/coordinators/profile');
       const profile = profileResponse.data;
       setCoordinatorName(`${profile.first_name || ''} ${profile.last_name || ''}`.trim());
 
-      // Fetch job statistics
-      const statsResponse = await api.get(`/jobs?createdBy=coordinator:${user?.id}&limit=1000`);
-      const jobs = statsResponse.data.jobs || [];
+      // Fetch all jobs (coordinator's own + affiliated company jobs)
+      const statsResponse = await api.get('/coordinators/jobs');
+      const allJobs = statsResponse.data || [];
+      
+      // Separate coordinator jobs from company jobs
+      const coordinatorJobs = allJobs.filter((job: any) => job.created_by_type === 'coordinator');
+      const companyJobs = allJobs.filter((job: any) => job.created_by_type === 'company');
       
       const stats = {
-        total: jobs.length,
-        active: jobs.filter((job: any) => job.status === 'active').length,
-        applications: jobs.reduce((sum: number, job: any) => sum + (job.application_count || 0), 0),
+        total: coordinatorJobs.length,
+        active: coordinatorJobs.filter((job: any) => job.status === 'active').length,
+        applications: allJobs.reduce((sum: number, job: any) => sum + (job.application_count || 0), 0),
         pending: 0 // Will be calculated from applications
       };
 
-      // Get recent jobs (last 5)
-      const recentJobsData = jobs.slice(0, 5).map((job: any) => ({
+      // Get recent coordinator jobs (last 5)
+      const recentJobsData = coordinatorJobs.slice(0, 5).map((job: any) => ({
         id: job.id,
         title: job.title,
         category: job.category,
         application_count: job.application_count || 0,
         status: job.status,
-        created_at: job.created_at
+        created_at: job.created_at,
+        created_by_type: job.created_by_type,
+        created_by_name: job.created_by_name
+      }));
+
+      // Get affiliated company jobs (last 5)
+      const affiliatedJobsData = companyJobs.slice(0, 5).map((job: any) => ({
+        id: job.id,
+        title: job.title,
+        category: job.category,
+        application_count: job.application_count || 0,
+        status: job.status,
+        created_at: job.created_at,
+        created_by_type: job.created_by_type,
+        created_by_name: job.created_by_name
       }));
 
       setJobStats(stats);
       setRecentJobs(recentJobsData);
+      setAffiliatedCompanyJobs(affiliatedJobsData);
 
       // Fetch recent applications across all jobs
-      if (jobs.length > 0) {
-        // Get applications for all coordinator jobs
-        const applicationPromises = jobs.slice(0, 3).map((job: any) => 
+      if (allJobs.length > 0) {
+        // Get applications for all jobs (coordinator + company)
+        const applicationPromises = allJobs.slice(0, 3).map((job: any) => 
           api.get(`/jobs/${job.id}/applications?limit=5`)
         );
         
@@ -107,7 +129,7 @@ export const CoordinatorDashboard: React.FC = () => {
           applications.forEach((app: any) => {
             allApplications.push({
               id: app.id,
-              job_title: jobs[index].title,
+              job_title: allJobs[index].title,
               applicant_name: `${app.first_name} ${app.last_name}`,
               status: app.status,
               created_at: app.created_at,
@@ -377,6 +399,67 @@ export const CoordinatorDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Affiliated Company Jobs */}
+        {affiliatedCompanyJobs.length > 0 && (
+          <div className="mt-8">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-blue-50">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900">Affiliated Company Job Postings</h3>
+                    <p className="mt-1 text-sm text-gray-600">
+                      Job posts from companies you're affiliated with
+                    </p>
+                  </div>
+                  <Link
+                    to="/coordinator/jobs"
+                    className="text-sm text-blue-600 hover:text-blue-500"
+                  >
+                    View all
+                  </Link>
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {affiliatedCompanyJobs.map((job) => (
+                    <div key={job.id} className="border-2 border-purple-200 rounded-lg p-4 bg-purple-50 hover:bg-purple-100 transition-colors">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center mb-1">
+                            <BriefcaseIcon className="h-5 w-5 text-purple-600 mr-2" />
+                            <h4 className="text-sm font-semibold text-gray-900">{job.title}</h4>
+                          </div>
+                          <p className="text-xs text-gray-600 mb-1">{job.category}</p>
+                          <div className="flex items-center mt-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-200 text-purple-800">
+                              {job.created_by_name || 'Company'}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-gray-500 ml-2">
+                          {new Date(job.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between pt-3 border-t border-purple-200">
+                        <div className="flex items-center text-xs text-gray-600">
+                          <UserGroupIcon className="h-4 w-4 text-purple-600 mr-1" />
+                          <span>{job.application_count} applications</span>
+                        </div>
+                        <Link
+                          to={`/jobs/${job.id}`}
+                          className="text-xs font-medium text-purple-600 hover:text-purple-700"
+                        >
+                          View details →
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

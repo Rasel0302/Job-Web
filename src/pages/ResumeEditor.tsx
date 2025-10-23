@@ -818,7 +818,8 @@ const PersonalDetailsForm: React.FC<{ data: any; onChange: (data: any) => void; 
             Profile Photo
           </label>
           <ProfilePhotoUpload
-            currentPhotoUrl={data.profilePhotoUrl}
+            key={`photo-upload-${hasPhoto ? 'with' : 'without'}-${data.profilePhotoUrl || 'none'}`}
+            currentPhotoUrl={data.profilePhotoUrl || null}
             onPhotoUpdate={(photoUrl) => updateField('profilePhotoUrl', photoUrl)}
             onUpload={async (file) => {
               const response = await userAPI.uploadPhoto(file);
@@ -1028,8 +1029,8 @@ const ResumePreview: React.FC<{
 
   const colors = colorSchemes[templateColor as keyof typeof colorSchemes] || colorSchemes.blue;
 
-  const hasPhoto = resume.template?.hasPhoto;
-  const isATS = resume.template?.isATS;
+  const hasPhoto = resume.template?.hasPhoto ?? false;
+  const isATS = resume.template?.isATS ?? false;
 
   // Different template layouts
   const renderClassicWithPhoto = () => (
@@ -1044,6 +1045,14 @@ const ResumePreview: React.FC<{
                   src={resume.personal_info.profilePhotoUrl}
                   alt="Profile"
                   className="w-16 h-16 object-cover rounded-lg"
+                  onError={(e) => {
+                    // Hide image on error and show placeholder
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      parent.innerHTML = `<span class="${colors.accent} text-xs">Photo</span>`;
+                    }
+                  }}
                 />
               ) : (
                 <span className={`${colors.accent} text-xs`}>Photo</span>
@@ -1125,6 +1134,13 @@ const ResumePreview: React.FC<{
                   src={resume.personal_info.profilePhotoUrl}
                   alt="Profile"
                   className="w-16 h-16 object-cover rounded-xl"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      parent.innerHTML = `<span class="${colors.accent} text-xs">Photo</span>`;
+                    }
+                  }}
                 />
               ) : (
                 <span className={`${colors.accent} text-xs`}>Photo</span>
@@ -1150,6 +1166,13 @@ const ResumePreview: React.FC<{
                   src={resume.personal_info.profilePhotoUrl}
                   alt="Profile"
                   className="w-16 h-16 object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      parent.innerHTML = `<span class="${colors.accent} text-xs">Photo</span>`;
+                    }
+                  }}
                 />
               ) : (
                 <span className={`${colors.accent} text-xs`}>Photo</span>

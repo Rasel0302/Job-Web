@@ -11,8 +11,11 @@ import {
   CalendarIcon,
   AcademicCapIcon,
   XMarkIcon,
-  CheckIcon 
+  CheckIcon,
+  StarIcon,
+  UserGroupIcon
 } from '@heroicons/react/24/outline';
+import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
 
 interface ProfileData {
   id: number;
@@ -47,11 +50,21 @@ export const Profile: React.FC = () => {
     courseIds: [] as number[],
   });
   const [courses, setCourses] = useState<Array<{ id: number; course_name: string; course_type: string }>>([]);
+  const [allRatings, setAllRatings] = useState<any[]>([]);
+  const [ratingsStats, setRatingsStats] = useState({
+    total_ratings: 0,
+    average_rating: 0,
+    highest_rating: 0,
+    lowest_rating: 0,
+    company_ratings_count: 0,
+    coordinator_ratings_count: 0
+  });
 
   useEffect(() => {
     if (user?.role === 'user') {
       fetchProfile();
       fetchCourses();
+      fetchRatings();
     } else {
       // Non-user roles (admin, coordinator, company) don't use this profile page
       setIsLoading(false);
@@ -89,6 +102,16 @@ export const Profile: React.FC = () => {
       setCourses(response.data);
     } catch (error) {
       console.error('Failed to fetch courses:', error);
+    }
+  };
+
+  const fetchRatings = async () => {
+    try {
+      const response = await userAPI.getMyRatings();
+      setAllRatings(response.data.ratings);
+      setRatingsStats(response.data.statistics);
+    } catch (error) {
+      console.error('Failed to fetch ratings:', error);
     }
   };
 
@@ -475,6 +498,138 @@ export const Profile: React.FC = () => {
                 ) : (
                   <span className="text-gray-500 text-sm">No courses selected</span>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* My Ratings & Feedback */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <h2 className="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+          <StarSolidIcon className="h-6 w-6 text-yellow-500 mr-2" />
+          My Ratings & Feedback
+        </h2>
+
+        {ratingsStats.total_ratings === 0 ? (
+          <div className="text-center py-12">
+            <StarIcon className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-700 mb-2">No Ratings Yet</h3>
+            <p className="text-gray-500 text-sm">
+              Keep applying to jobs to receive feedback from companies and coordinators!
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Rating Summary */}
+            <div className="bg-gradient-to-r from-yellow-50 via-orange-50 to-yellow-50 border-2 border-yellow-300 rounded-xl p-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="text-center">
+                  <p className="text-sm text-gray-600 mb-2">Average Rating</p>
+                  <div className="flex items-center justify-center space-x-2">
+                    <StarSolidIcon className="h-8 w-8 text-yellow-500" />
+                    <span className="text-3xl font-bold text-gray-900">
+                      {Number(ratingsStats.average_rating || 0).toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">out of 5.0</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-600 mb-2">Total Ratings</p>
+                  <p className="text-3xl font-bold text-gray-900">{ratingsStats.total_ratings || 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">from all reviewers</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-600 mb-2">Best Rating</p>
+                  <div className="flex items-center justify-center space-x-1">
+                    <StarSolidIcon className="h-6 w-6 text-green-500" />
+                    <span className="text-2xl font-bold text-green-600">
+                      {Number(ratingsStats.highest_rating || 0).toFixed(1)}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm text-gray-600 mb-2">Ratings From</p>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div className="bg-white rounded-lg p-2">
+                      <p className="text-xs text-gray-500">Companies</p>
+                      <p className="text-lg font-bold text-purple-600">{ratingsStats.company_ratings_count}</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2">
+                      <p className="text-xs text-gray-500">Coordinators</p>
+                      <p className="text-lg font-bold text-blue-600">{ratingsStats.coordinator_ratings_count}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* All Ratings List */}
+            <div>
+              <h3 className="text-lg font-medium text-gray-900 mb-4">All Feedback ({allRatings.length})</h3>
+              <div className="space-y-4">
+                {allRatings.map((rating) => (
+                  <div key={rating.id} className="border-2 border-gray-200 rounded-lg p-5 hover:border-blue-300 hover:shadow-md transition-all">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center space-x-4">
+                        {rating.rater_photo ? (
+                          <img
+                            src={rating.rater_photo}
+                            alt={rating.rater_name}
+                            className="h-12 w-12 rounded-full object-cover border-2 border-gray-200"
+                          />
+                        ) : (
+                          <div className="h-12 w-12 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center">
+                            <UserGroupIcon className="h-7 w-7 text-gray-500" />
+                          </div>
+                        )}
+                        <div>
+                          <p className="text-base font-semibold text-gray-900">{rating.rater_name}</p>
+                          <p className="text-sm text-gray-600">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              rating.rated_by_type === 'company' 
+                                ? 'bg-purple-100 text-purple-800' 
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {rating.rated_by_type === 'company' ? 'Company' : 'Coordinator'}
+                            </span>
+                            <span className="mx-2">•</span>
+                            {rating.job_title}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <div className="flex items-center space-x-1 mb-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <StarSolidIcon
+                              key={star}
+                              className={`h-5 w-5 ${star <= Number(rating.rating || 0) ? 'text-yellow-400' : 'text-gray-300'}`}
+                            />
+                          ))}
+                        </div>
+                        <span className="text-lg font-bold text-gray-900">{Number(rating.rating || 0).toFixed(1)} / 5.0</span>
+                      </div>
+                    </div>
+                    
+                    {rating.comment && (
+                      <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <p className="text-sm font-medium text-gray-700 mb-1">Feedback:</p>
+                        <p className="text-sm text-gray-800 italic">"{rating.comment}"</p>
+                      </div>
+                    )}
+                    
+                    <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                      <span>
+                        <CalendarIcon className="h-4 w-4 inline mr-1" />
+                        Received on {new Date(rating.created_at).toLocaleDateString('en-US', { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

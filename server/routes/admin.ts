@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authenticateForProfileCompletion, authorize, AuthRequest } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
 import { emailService } from '../services/emailService.js';
+import { UploadService } from '../services/uploadService.js';
 
 const router = express.Router();
 
@@ -242,6 +243,7 @@ router.get('/companies', authenticate, authorize('admin'), asyncHandler(async (r
       c.created_at,
       cp.company_name,
       cp.business_summary,
+      cp.profile_photo,
       'company' as role
     FROM companies c
     LEFT JOIN company_profiles cp ON c.id = cp.company_id
@@ -249,7 +251,13 @@ router.get('/companies', authenticate, authorize('admin'), asyncHandler(async (r
     ORDER BY c.created_at DESC
   `);
 
-  res.json(companies);
+  // Process profile photos
+  const processedCompanies = (companies as any[]).map(company => ({
+    ...company,
+    profile_photo: UploadService.getPhotoUrl(company.profile_photo)
+  }));
+
+  res.json(processedCompanies);
 }));
 
 // Get all admins with full profile details
@@ -295,9 +303,16 @@ router.get('/jobs', authenticate, authorize('admin'), asyncHandler(async (req: A
       j.location,
       CASE WHEN j.status = 'active' THEN 1 ELSE 0 END as is_active,
       j.created_at,
-      j.company_name,
+      CASE 
+        WHEN j.created_by_type = 'coordinator' THEN 
+          COALESCE(CONCAT(cp.first_name, ' ', cp.last_name), j.coordinator_name, 'Unknown Coordinator')
+        WHEN j.created_by_type = 'company' THEN 
+          COALESCE(company_p.company_name, j.company_name, j.business_owner_name, 'Unknown Company')
+      END as company_name,
       j.category as category_name
     FROM jobs j
+    LEFT JOIN coordinator_profiles cp ON j.created_by_type = 'coordinator' AND j.created_by_id = cp.coordinator_id
+    LEFT JOIN company_profiles company_p ON j.created_by_type = 'company' AND j.created_by_id = company_p.company_id
     ORDER BY j.created_at DESC
   `);
 

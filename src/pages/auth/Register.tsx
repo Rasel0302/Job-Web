@@ -78,7 +78,7 @@ export const Register: React.FC = () => {
     }
 
     if (formData.role === 'company' && !formData.invitationToken) {
-      toast.error('Invitation token is required for company registration');
+      toast.error('Invitation code is required for company registration');
       return;
     }
 
@@ -227,11 +227,11 @@ export const Register: React.FC = () => {
             )}
           </div>
 
-          {/* Company Invitation Token */}
+          {/* Company Invitation Code */}
           {formData.role === 'company' && (
             <div>
               <label htmlFor="invitationToken" className="block text-sm font-medium text-gray-700">
-                Invitation Token
+                Invitation Code
               </label>
               <input
                 id="invitationToken"
@@ -241,7 +241,7 @@ export const Register: React.FC = () => {
                 value={formData.invitationToken}
                 onChange={(e) => setFormData({ ...formData, invitationToken: e.target.value })}
                 className="input-field mt-1"
-                placeholder="Enter invitation token from coordinator"
+                placeholder="Enter invitation code from coordinator"
               />
               <p className="mt-1 text-sm text-gray-500">
                 You need an invitation from a coordinator to register as a company.

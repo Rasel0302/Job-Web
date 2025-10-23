@@ -200,7 +200,7 @@ router.get('/navbar-info', authenticate, asyncHandler(async (req: AuthRequest, r
       
     case 'company':
       const [companyProfile] = await connection.execute(`
-        SELECT company_name as first_name, '' as last_name, company_logo as profile_photo FROM company_profiles WHERE company_id = ?
+        SELECT company_name as first_name, '' as last_name, profile_photo FROM company_profiles WHERE company_id = ?
       `, [req.user!.id]);
       userInfo = (companyProfile as any[])[0];
       break;
@@ -213,19 +213,11 @@ router.get('/navbar-info', authenticate, asyncHandler(async (req: AuthRequest, r
       break;
   }
 
-  // Handle profile photo URL differently for admins and coordinators (they store full URLs)
+  // Process profile photo URL
   let profilePhotoUrl: string | null = null;
   if (userInfo?.profile_photo) {
-    if (req.user!.role === 'admin') {
-      // Admin profile photos are stored as full URLs
-      profilePhotoUrl = userInfo.profile_photo;
-    } else if (req.user!.role === 'coordinator') {
-      // Coordinator profile photos are also stored as full URLs
-      profilePhotoUrl = userInfo.profile_photo;
-    } else {
-      // Other user types store file paths
-      profilePhotoUrl = UploadService.getPhotoUrl(userInfo.profile_photo);
-    }
+    // All profile photos (user, coordinator, company, admin) need to be processed with UploadService
+    profilePhotoUrl = UploadService.getPhotoUrl(userInfo.profile_photo);
   }
 
   res.json({
@@ -275,6 +267,108 @@ router.put('/profile', authenticate, authorize('user'), asyncHandler(async (req:
   res.json({ message: 'Profile updated successfully' });
 }));
 
+// Get user dashboard stats
+router.get('/dashboard-stats', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const connection = getConnection();
+
+  // Get application stats
+  const [applicationStats] = await connection.execute(`
+    SELECT 
+      COUNT(*) as total_applications,
+      SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_applications,
+      SUM(CASE WHEN status = 'under_review' THEN 1 ELSE 0 END) as under_review_applications,
+      SUM(CASE WHEN status = 'qualified' THEN 1 ELSE 0 END) as qualified_applications,
+      SUM(CASE WHEN status = 'accepted' THEN 1 ELSE 0 END) as accepted_applications,
+      SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_applications
+    FROM job_applications
+    WHERE user_id = ?
+  `, [req.user!.id]);
+
+  // Get resume count
+  const [resumeStats] = await connection.execute(`
+    SELECT COUNT(*) as total_resumes
+    FROM resumes
+    WHERE user_id = ?
+  `, [req.user!.id]);
+
+  // Get active jobs count
+  const [jobStats] = await connection.execute(`
+    SELECT COUNT(*) as total_jobs
+    FROM jobs
+    WHERE status = 'active'
+  `, []);
+
+  // Get job match count (based on user's courses and graduation status)
+  let matchCount = 0;
+  try {
+    const [matchStats] = await connection.execute(`
+      SELECT COUNT(DISTINCT j.id) as total_matches
+      FROM jobs j
+      LEFT JOIN user_courses uc ON uc.user_id = ?
+      WHERE j.status = 'active'
+        AND (j.course_id = uc.course_id OR j.course_id IS NULL)
+    `, [req.user!.id]);
+    matchCount = ((matchStats as any[])[0]?.total_matches || 0);
+  } catch (error) {
+    console.error('Error fetching job matches:', error);
+    matchCount = 0;
+  }
+
+  const stats = {
+    applications: ((applicationStats as any[])[0]?.total_applications || 0),
+    pending_applications: ((applicationStats as any[])[0]?.pending_applications || 0),
+    under_review_applications: ((applicationStats as any[])[0]?.under_review_applications || 0),
+    qualified_applications: ((applicationStats as any[])[0]?.qualified_applications || 0),
+    accepted_applications: ((applicationStats as any[])[0]?.accepted_applications || 0),
+    rejected_applications: ((applicationStats as any[])[0]?.rejected_applications || 0),
+    resumes: ((resumeStats as any[])[0]?.total_resumes || 0),
+    matches: matchCount,
+    jobs: ((jobStats as any[])[0]?.total_jobs || 0)
+  };
+
+  res.json(stats);
+}));
+
+// Get recent activity for user dashboard
+router.get('/recent-activity', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const connection = getConnection();
+
+  // Get recent applications
+  const [recentApplications] = await connection.execute(`
+    SELECT 
+      ja.id,
+      ja.status,
+      ja.created_at,
+      j.title as job_title,
+      j.company_name,
+      j.business_owner_name,
+      COALESCE(j.company_name, j.business_owner_name, 'Company') as display_company
+    FROM job_applications ja
+    JOIN jobs j ON ja.job_id = j.id
+    WHERE ja.user_id = ?
+    ORDER BY ja.created_at DESC
+    LIMIT 5
+  `, [req.user!.id]);
+
+  // Get recent resume updates
+  const [recentResumes] = await connection.execute(`
+    SELECT 
+      id,
+      title,
+      updated_at,
+      status
+    FROM resumes
+    WHERE user_id = ?
+    ORDER BY updated_at DESC
+    LIMIT 3
+  `, [req.user!.id]);
+
+  res.json({
+    applications: recentApplications,
+    resumes: recentResumes
+  });
+}));
+
 // Get approved coordinators (public endpoint)
 router.get('/coordinators/approved', asyncHandler(async (req, res) => {
   const connection = getConnection();
@@ -285,7 +379,9 @@ router.get('/coordinators/approved', asyncHandler(async (req, res) => {
       cp.first_name,
       cp.last_name,
       cp.designated_course,
-      cp.profile_photo
+      cp.profile_photo,
+      cp.average_rating,
+      cp.rating_count
     FROM coordinators c
     INNER JOIN coordinator_profiles cp ON c.id = cp.coordinator_id
     WHERE c.is_verified = TRUE 
@@ -297,7 +393,107 @@ router.get('/coordinators/approved', asyncHandler(async (req, res) => {
     ORDER BY cp.first_name ASC, cp.last_name ASC
   `);
   
-  res.json(coordinators);
+  // Process profile photo URLs
+  const processedCoordinators = (coordinators as any[]).map(coord => ({
+    ...coord,
+    profile_photo: UploadService.getPhotoUrl(coord.profile_photo)
+  }));
+  
+  res.json(processedCoordinators);
+}));
+
+// Get approved companies/business owners (public endpoint)
+router.get('/companies/approved', asyncHandler(async (req, res) => {
+  const connection = getConnection();
+  
+  const [companies] = await connection.execute(`
+    SELECT 
+      c.id,
+      cp.company_name,
+      cp.profile_type,
+      cp.first_name,
+      cp.last_name,
+      cp.business_summary,
+      cp.profile_photo,
+      cp.average_rating,
+      cp.rating_count
+    FROM companies c
+    INNER JOIN company_profiles cp ON c.id = cp.company_id
+    WHERE c.is_verified = TRUE 
+      AND c.is_approved = TRUE 
+      AND cp.profile_completed = TRUE
+      AND cp.company_name IS NOT NULL
+      AND cp.business_summary IS NOT NULL
+    ORDER BY cp.company_name ASC
+  `);
+  
+  // Process profile photo URLs
+  const processedCompanies = (companies as any[]).map(company => ({
+    ...company,
+    profile_photo: UploadService.getPhotoUrl(company.profile_photo)
+  }));
+  
+  res.json(processedCompanies);
+}));
+
+// Get user ratings
+router.get('/my-ratings', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const connection = getConnection();
+  
+  // Get all ratings for this user's applications with rater details
+  const [ratings] = await connection.execute(`
+    SELECT 
+      ar.id,
+      ar.rating,
+      ar.comment,
+      ar.created_at,
+      ar.rated_by_type,
+      ar.rated_by_id,
+      ja.job_id,
+      j.title as job_title,
+      CASE 
+        WHEN ar.rated_by_type = 'coordinator' THEN 
+          CONCAT(cp.first_name, ' ', cp.last_name)
+        WHEN ar.rated_by_type = 'company' THEN 
+          comp_p.company_name
+      END as rater_name,
+      CASE 
+        WHEN ar.rated_by_type = 'coordinator' THEN cp.profile_photo
+        WHEN ar.rated_by_type = 'company' THEN comp_p.profile_photo
+      END as rater_photo
+    FROM applicant_ratings ar
+    INNER JOIN job_applications ja ON ar.application_id = ja.id
+    INNER JOIN jobs j ON ja.job_id = j.id
+    LEFT JOIN coordinator_profiles cp ON ar.rated_by_type = 'coordinator' AND ar.rated_by_id = cp.coordinator_id
+    LEFT JOIN company_profiles comp_p ON ar.rated_by_type = 'company' AND ar.rated_by_id = comp_p.company_id
+    WHERE ja.user_id = ?
+    ORDER BY ar.created_at DESC
+  `, [req.user!.id]);
+
+  // Calculate rating statistics
+  const [stats] = await connection.execute(`
+    SELECT 
+      COUNT(DISTINCT ar.id) as total_ratings,
+      AVG(ar.rating) as average_rating,
+      MAX(ar.rating) as highest_rating,
+      MIN(ar.rating) as lowest_rating,
+      COUNT(DISTINCT CASE WHEN ar.rated_by_type = 'company' THEN ar.id END) as company_ratings_count,
+      COUNT(DISTINCT CASE WHEN ar.rated_by_type = 'coordinator' THEN ar.id END) as coordinator_ratings_count
+    FROM applicant_ratings ar
+    INNER JOIN job_applications ja ON ar.application_id = ja.id
+    WHERE ja.user_id = ?
+  `, [req.user!.id]);
+
+  // Process profile photos
+  const processedRatings = (ratings as any[]).map(rating => ({
+    ...rating,
+    rater_photo: UploadService.getPhotoUrl(rating.rater_photo)
+  }));
+
+  res.json({
+    ratings: processedRatings,
+    statistics: (stats as any[])[0]
+  });
 }));
 
 export default router;

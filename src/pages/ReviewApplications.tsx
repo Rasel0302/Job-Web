@@ -3,19 +3,21 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { toast } from 'react-hot-toast';
+import { ApplicantRating } from '../components/ApplicantRating';
+import { RatingBreakdown } from '../components/RatingBreakdown';
 import {
   UserIcon,
   EnvelopeIcon,
   PhoneIcon,
   DocumentTextIcon,
-  ChatBubbleLeftRightIcon,
   CheckIcon,
   XMarkIcon,
   EyeIcon,
   FunnelIcon,
   ArrowLeftIcon,
   CalendarIcon,
-  LinkIcon
+  LinkIcon,
+  StarIcon
 } from '@heroicons/react/24/outline';
 
 interface JobApplication {
@@ -41,6 +43,32 @@ interface JobApplication {
   experience_match_score: number;
   comment_count: number;
   screening_answers: ScreeningAnswer[];
+  
+  // Rating fields
+  user_rating?: number;
+  user_rating_comment?: string;
+  average_rating?: number;
+  rating_count?: number;
+  all_ratings?: Array<{
+    id: number;
+    rating: number;
+    comment: string | null;
+    created_at: string;
+    rated_by_type: 'coordinator' | 'company';
+    rater_name: string;
+    rater_photo: string | null;
+    job_title?: string;
+  }>;
+  
+  // Complete user rating profile across all applications
+  user_rating_profile?: {
+    overall_average_rating?: number;
+    total_ratings?: number;
+    highest_rating?: number;
+    lowest_rating?: number;
+    company_ratings_count?: number;
+    coordinator_ratings_count?: number;
+  };
 }
 
 interface ScreeningAnswer {
@@ -50,16 +78,6 @@ interface ScreeningAnswer {
   question_type: string;
   answer: string;
   options: string[] | null;
-}
-
-interface Comment {
-  id: number;
-  application_id: number;
-  commenter_id: number;
-  commenter_type: 'coordinator' | 'company';
-  commenter_name: string;
-  comment: string;
-  created_at: string;
 }
 
 interface JobDetails {
@@ -80,13 +98,13 @@ export const ReviewApplications: React.FC = () => {
   const [applications, setApplications] = useState<JobApplication[]>([]);
   const [filteredApplications, setFilteredApplications] = useState<JobApplication[]>([]);
   const [selectedApplication, setSelectedApplication] = useState<JobApplication | null>(null);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [ratingFilter, setRatingFilter] = useState<string>('all');
   const [preScreeningFilter, setPreScreeningFilter] = useState<boolean>(false);
   const [showApplicationDetails, setShowApplicationDetails] = useState(false);
+  const [jobOwnership, setJobOwnership] = useState<{created_by_type: string, created_by_id: number} | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -100,12 +118,16 @@ export const ReviewApplications: React.FC = () => {
       await filterApplications();
     };
     applyFilters();
-  }, [applications, statusFilter, preScreeningFilter]);
+  }, [applications, statusFilter, ratingFilter, preScreeningFilter]);
 
   const fetchJobDetails = async () => {
     try {
       const response = await api.get(`/jobs/${id}`);
       setJob(response.data);
+      setJobOwnership({
+        created_by_type: response.data.created_by_type,
+        created_by_id: response.data.created_by_id
+      });
     } catch (error) {
       console.error('Failed to fetch job details:', error);
       toast.error('Failed to load job details');
@@ -129,7 +151,6 @@ export const ReviewApplications: React.FC = () => {
     try {
       const response = await api.get(`/jobs/applications/${applicationId}/details`);
       setSelectedApplication(response.data);
-      fetchComments(applicationId);
       setShowApplicationDetails(true);
     } catch (error) {
       console.error('Failed to fetch application details:', error);
@@ -137,14 +158,6 @@ export const ReviewApplications: React.FC = () => {
     }
   };
 
-  const fetchComments = async (applicationId: number) => {
-    try {
-      const response = await api.get(`/jobs/applications/${applicationId}/comments`);
-      setComments(response.data);
-    } catch (error) {
-      console.error('Failed to fetch comments:', error);
-    }
-  };
 
   const filterApplications = async () => {
     let filtered = [...applications];
@@ -152,6 +165,19 @@ export const ReviewApplications: React.FC = () => {
     // Status filter
     if (statusFilter !== 'all') {
       filtered = filtered.filter(app => app.status === statusFilter);
+    }
+
+    // Rating filter
+    if (ratingFilter !== 'all') {
+      if (ratingFilter === 'rated') {
+        filtered = filtered.filter(app => app.average_rating && app.average_rating > 0);
+      } else if (ratingFilter === 'unrated') {
+        filtered = filtered.filter(app => !app.average_rating || app.average_rating === 0);
+      } else if (ratingFilter === 'high') {
+        filtered = filtered.filter(app => app.average_rating && app.average_rating >= 4);
+      } else if (ratingFilter === 'low') {
+        filtered = filtered.filter(app => app.average_rating && app.average_rating < 3);
+      }
     }
 
     // Pre-screening filter
@@ -200,22 +226,55 @@ export const ReviewApplications: React.FC = () => {
     }
   };
 
-  const addComment = async () => {
-    if (!newComment.trim() || !selectedApplication) return;
+
+  const handleRatingSubmit = async (rating: number, comment: string) => {
+    if (!selectedApplication) return;
+
+    // Coordinators can only rate their own job applicants
+    if (user?.role === 'coordinator') {
+      if (jobOwnership?.created_by_type !== 'coordinator' || jobOwnership.created_by_id !== user.id) {
+        toast.error('You can only rate applicants for your own job postings');
+        throw new Error('Permission denied');
+      }
+    }
 
     try {
-      setSubmitting(true);
-      await api.post(`/jobs/applications/${selectedApplication.id}/comments`, {
-        comment: newComment
+      const response = await api.post(`/jobs/applications/${selectedApplication.id}/rate`, {
+        rating,
+        comment
       });
-      setNewComment('');
-      fetchComments(selectedApplication.id);
-      toast.success('Comment added successfully');
-    } catch (error: any) {
-      console.error('Failed to add comment:', error);
-      toast.error(error.response?.data?.message || 'Failed to add comment');
-    } finally {
-      setSubmitting(false);
+
+      toast.success('Rating submitted successfully');
+      
+      // Update local state
+      setApplications(apps => 
+        apps.map(app => 
+          app.id === selectedApplication.id 
+            ? { 
+                ...app, 
+                user_rating: rating,
+                user_rating_comment: comment,
+                average_rating: response.data.average_rating,
+                rating_count: response.data.rating_count
+              }
+            : app
+        )
+      );
+
+      // Update selected application
+      setSelectedApplication({
+        ...selectedApplication,
+        user_rating: rating,
+        user_rating_comment: comment,
+        average_rating: response.data.average_rating,
+        rating_count: response.data.rating_count
+      });
+
+      await fetchApplications(); // Refresh to get updated sorting
+    } catch (error) {
+      console.error('Failed to submit rating:', error);
+      toast.error('Failed to submit rating');
+      throw error;
     }
   };
 
@@ -251,6 +310,10 @@ export const ReviewApplications: React.FC = () => {
     );
   }
 
+  // Determine if this is coordinator's own job or a company job
+  const isOwnJob = jobOwnership?.created_by_type === 'coordinator' && jobOwnership.created_by_id === user?.id;
+  const isCompanyJob = jobOwnership?.created_by_type === 'company';
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
@@ -266,9 +329,21 @@ export const ReviewApplications: React.FC = () => {
             </button>
             <h1 className="text-3xl font-bold text-gray-900">Review Applications</h1>
             {job && (
-              <p className="mt-2 text-gray-600">
-                {job.title} • {applications.length} applications
-              </p>
+              <div className="mt-2 flex items-center space-x-3">
+                <p className="text-gray-600">
+                  {job.title} • {applications.length} applications
+                </p>
+                {isCompanyJob && (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                    View Only - Company Job
+                  </span>
+                )}
+                {isOwnJob && (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    Your Job - Full Access
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -276,18 +351,16 @@ export const ReviewApplications: React.FC = () => {
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow mb-6 p-6">
-        <div className="flex items-center space-x-6">
-          <div className="flex items-center">
-            <FunnelIcon className="h-5 w-5 text-gray-400 mr-2" />
-            <span className="text-sm font-medium text-gray-700">Filters:</span>
-          </div>
-          
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <FunnelIcon className="h-4 w-4 inline mr-1" />
+              Status
+            </label>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-sm border border-gray-300 rounded-md px-3 py-1"
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-2"
             >
               <option value="all">All Status</option>
               <option value="pending">Pending</option>
@@ -298,8 +371,26 @@ export const ReviewApplications: React.FC = () => {
             </select>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <StarIcon className="h-4 w-4 inline mr-1" />
+              Rating
+            </label>
+            <select
+              value={ratingFilter}
+              onChange={(e) => setRatingFilter(e.target.value)}
+              className="w-full text-sm border border-gray-300 rounded-md px-3 py-2"
+            >
+              <option value="all">All Ratings</option>
+              <option value="high">High Rated (4+ stars)</option>
+              <option value="rated">Has Rating</option>
+              <option value="unrated">Not Rated</option>
+              <option value="low">Low Rated (&lt;3 stars)</option>
+            </select>
+          </div>
+
           {job?.filter_pre_screening && (
-            <div>
+            <div className="flex items-end">
               <label className="flex items-center">
                 <input
                   type="checkbox"
@@ -377,11 +468,17 @@ export const ReviewApplications: React.FC = () => {
                         {application.overall_score > 0 && (
                           <span className="text-blue-600">ATS Score: {application.overall_score}%</span>
                         )}
-                        {application.comment_count > 0 && (
-                          <span className="flex items-center text-gray-600">
-                            <ChatBubbleLeftRightIcon className="h-4 w-4 mr-1" />
-                            {application.comment_count} comments
-                          </span>
+                        {application.user_rating_profile?.overall_average_rating && Number(application.user_rating_profile.overall_average_rating) > 0 ? (
+                          <div className="bg-purple-50 border border-purple-200 rounded px-2 py-1 flex items-center space-x-1">
+                            <StarIcon className="h-3 w-3 text-purple-500 fill-current" />
+                            <span className="text-xs font-semibold text-purple-900">
+                              {Number(application.user_rating_profile.overall_average_rating).toFixed(1)} ({application.user_rating_profile.total_ratings || 0})
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="bg-gray-50 border border-gray-200 rounded px-2 py-1">
+                            <span className="text-xs text-gray-500">No ratings</span>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -396,7 +493,8 @@ export const ReviewApplications: React.FC = () => {
                       View Details
                     </button>
 
-                    {user?.role === 'coordinator' && (
+                    {/* Only show accept/decline for coordinator's own jobs */}
+                    {user?.role === 'coordinator' && isOwnJob && (
                       <div className="flex space-x-2">
                         {application.status !== 'qualified' && application.status !== 'hired' && (
                           <button
@@ -419,6 +517,13 @@ export const ReviewApplications: React.FC = () => {
                             Reject
                           </button>
                         )}
+                      </div>
+                    )}
+                    
+                    {/* View-only message for company jobs */}
+                    {isCompanyJob && (
+                      <div className="text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded">
+                        View Only - Company Job
                       </div>
                     )}
                   </div>
@@ -540,71 +645,13 @@ export const ReviewApplications: React.FC = () => {
                 )}
               </div>
 
-              {/* Comments Section */}
               <div className="space-y-6">
-                <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-4">Comments</h4>
-                  
-                  {/* Add Comment */}
-                  <div className="mb-6">
-                    <textarea
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder={
-                        user?.role === 'coordinator' 
-                          ? "Add a comment about this applicant..." 
-                          : user?.role === 'company'
-                          ? "Add your thoughts about this applicant (e.g., 'I need this person')..."
-                          : "You don't have permission to comment"
-                      }
-                      disabled={!user || (user.role !== 'coordinator' && user.role !== 'company')}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                    />
-                    {(user?.role === 'coordinator' || user?.role === 'company') && (
-                      <button
-                        onClick={addComment}
-                        disabled={submitting || !newComment.trim()}
-                        className="mt-2 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                      >
-                        {submitting ? 'Adding...' : 'Add Comment'}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Comments List */}
-                  <div className="space-y-4 max-h-96 overflow-y-auto">
-                    {comments.length === 0 ? (
-                      <p className="text-sm text-gray-500 text-center py-4">No comments yet</p>
-                    ) : (
-                      comments.map((comment) => (
-                        <div key={comment.id} className="bg-gray-50 rounded-lg p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-medium text-gray-900">
-                              {comment.commenter_name}
-                              <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                                comment.commenter_type === 'coordinator' 
-                                  ? 'bg-blue-100 text-blue-800' 
-                                  : 'bg-purple-100 text-purple-800'
-                              }`}>
-                                {comment.commenter_type === 'coordinator' ? 'Coordinator' : 'Business Owner'}
-                              </span>
-                            </span>
-                            <span className="text-xs text-gray-500">{formatDate(comment.created_at)}</span>
-                          </div>
-                          <p className="text-sm text-gray-700">{comment.comment}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                {/* Status Actions for Coordinators */}
-                {user?.role === 'coordinator' && (
-                  <div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-4">Update Status</h4>
+                {/* Status Actions - Only for Own Jobs */}
+                {isOwnJob && (
+                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <h4 className="text-lg font-medium text-gray-900 mb-4">Status & Actions</h4>
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between mb-4">
                         <span className="text-sm text-gray-700">Current Status:</span>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(selectedApplication.status)}`}>
                           {selectedApplication.status.replace('_', ' ')}
@@ -637,6 +684,67 @@ export const ReviewApplications: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {/* View Only Notice for Company Jobs */}
+                {isCompanyJob && (
+                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-amber-50 to-orange-50 px-6 py-4 border-b border-amber-200">
+                      <h4 className="text-lg font-semibold text-amber-900 flex items-center">
+                        <StarIcon className="h-5 w-5 text-amber-600 mr-2" />
+                        Company Job - View Only
+                      </h4>
+                    </div>
+                    <div className="p-6">
+                      <p className="text-sm text-amber-700">
+                        View only - This is a company job. You can view and rate applicants but cannot change their status.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Rating Section - Only for Own Jobs */}
+                {isOwnJob && (
+                  <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-6 py-4 border-b border-purple-200">
+                      <h4 className="text-lg font-semibold text-gray-900 flex items-center">
+                        <StarIcon className="h-5 w-5 text-purple-500 mr-2" />
+                        Rate Applicant
+                      </h4>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Rate this applicant's overall performance and suitability
+                      </p>
+                    </div>
+                    <div className="p-6">
+                      <ApplicantRating
+                        currentRating={selectedApplication.user_rating}
+                        currentComment={selectedApplication.user_rating_comment}
+                        onSubmit={handleRatingSubmit}
+                        averageRating={selectedApplication.user_rating_profile?.overall_average_rating}
+                        ratingCount={selectedApplication.user_rating_profile?.total_ratings}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Rating History */}
+                <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 px-6 py-4 border-b border-emerald-200">
+                    <h4 className="text-lg font-semibold text-gray-900 flex items-center">
+                      <StarIcon className="h-5 w-5 text-emerald-500 mr-2" />
+                      Applicant's Rating History
+                    </h4>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Complete rating history from all job applications and interactions
+                    </p>
+                  </div>
+                  <div className="p-6">
+                    <RatingBreakdown
+                      ratings={selectedApplication.all_ratings || []}
+                      averageRating={selectedApplication.user_rating_profile?.overall_average_rating}
+                      totalCount={selectedApplication.user_rating_profile?.total_ratings}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>

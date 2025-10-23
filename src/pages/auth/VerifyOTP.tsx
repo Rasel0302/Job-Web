@@ -103,6 +103,8 @@ export const VerifyOTP: React.FC = () => {
               navigate('/admin/complete-profile');
             } else if (role === 'coordinator') {
               navigate('/coordinator/complete-profile');
+            } else if (role === 'company') {
+              navigate('/company/complete-profile');
             } else {
               navigate('/complete-profile');
             }
@@ -110,9 +112,8 @@ export const VerifyOTP: React.FC = () => {
             navigate('/admin/pending-approval');
           } else if (role === 'coordinator') {
             navigate('/coordinator/pending-approval');
-          } else if (role && role !== 'user') {
-            // For companies, show pending approval message
-            navigate('/dashboard');
+          } else if (role === 'company') {
+            navigate('/company/dashboard');
           } else {
             navigate('/complete-profile');
           }

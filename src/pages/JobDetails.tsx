@@ -3,6 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
 import { toast } from 'react-hot-toast';
+import { JobRating } from '../components/JobRating';
+import { RatingDisplay } from '../components/RatingDisplay';
+import { ProfileRating } from '../components/ProfileRating';
 import { 
   MapPinIcon, 
   BriefcaseIcon, 
@@ -213,10 +216,10 @@ export const JobDetails: React.FC = () => {
                   {job.application_count || 0} applications
                 </span>
                 <span>{job.positions_available} position{job.positions_available !== 1 ? 's' : ''} available</span>
-                {job.average_rating > 0 && (
+                {job.average_rating && Number(job.average_rating) > 0 && (
                   <div className="flex items-center">
                     <StarIcon className="h-4 w-4 text-yellow-400 fill-current mr-1" />
-                    <span>{job.average_rating.toFixed(1)} ({job.rating_count} review{job.rating_count !== 1 ? 's' : ''})</span>
+                    <span>{Number(job.average_rating || 0).toFixed(1)} ({job.rating_count || 0} review{job.rating_count !== 1 ? 's' : ''})</span>
                   </div>
                 )}
               </div>
@@ -454,7 +457,7 @@ export const JobDetails: React.FC = () => {
             <div className="bg-yellow-50 rounded-lg p-4 text-center">
               <StarIcon className="h-8 w-8 text-yellow-600 mx-auto mb-2" />
               <div className="text-2xl font-bold text-yellow-900">
-                {job.average_rating ? job.average_rating.toFixed(1) : 'N/A'}
+                {job.average_rating ? Number(job.average_rating || 0).toFixed(1) : 'N/A'}
               </div>
               <div className="text-sm text-yellow-600">Rating ({job.rating_count || 0} reviews)</div>
             </div>
@@ -497,6 +500,85 @@ export const JobDetails: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Job Rating Section */}
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div className="bg-white rounded-xl shadow-lg p-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Job Rating & Reviews</h2>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Rating Display */}
+            <div className="lg:col-span-2">
+              <RatingDisplay
+                entityId={job.id}
+                entityType="job"
+                averageRating={job.average_rating}
+                totalCount={job.rating_count}
+                showDetails={true}
+              />
+            </div>
+
+            {/* User Rating Input */}
+            <div className="lg:col-span-1">
+              {user?.role === 'user' ? (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Rate This Job</h3>
+                  <JobRating
+                    jobId={job.id}
+                    readOnly={false}
+                  />
+                </div>
+              ) : user?.role === 'coordinator' || user?.role === 'company' ? (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Job Rating (View Only)</h3>
+                  <JobRating
+                    jobId={job.id}
+                    readOnly={true}
+                  />
+                </div>
+              ) : (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Rate This Job</h3>
+                  <JobRating
+                    jobId={job.id}
+                    readOnly={true}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rate Company/Coordinator Section */}
+      {job.created_by_type && (
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">
+              Rate the {job.created_by_type === 'company' ? 'Company' : 'Coordinator'}
+            </h2>
+            
+            {user?.role === 'user' ? (
+              <ProfileRating
+                profileId={job.created_by_id}
+                profileType={job.created_by_type as 'coordinator' | 'company'}
+                profileName={job.created_by_type === 'company' ? job.company_name || 'Company' : job.coordinator_name || 'Coordinator'}
+                context="job_post"
+                jobId={job.id}
+                readOnly={false}
+              />
+            ) : (
+              <div className="text-center py-8">
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                  <p className="text-gray-600">
+                    Only users can rate {job.created_by_type === 'company' ? 'companies' : 'coordinators'}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

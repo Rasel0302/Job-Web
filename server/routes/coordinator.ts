@@ -4,6 +4,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authenticateForProfileCompletion, authorize, AuthRequest } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
 import { emailService } from '../services/emailService.js';
+import { UploadService } from '../services/uploadService.js';
 
 const router = express.Router();
 
@@ -23,6 +24,8 @@ router.get('/profile', authenticateForProfileCompletion, asyncHandler(async (req
       cp.gender,
       cp.designated_course,
       cp.profile_photo,
+      cp.average_rating,
+      cp.rating_count,
       COALESCE(cp.is_profile_complete, FALSE) as is_profile_complete
     FROM coordinators c
     LEFT JOIN coordinator_profiles cp ON c.id = cp.coordinator_id
@@ -151,16 +154,6 @@ router.post('/invite-company', authenticate, authorize('coordinator'), asyncHand
 
   const connection = getConnection();
 
-  // Check if there's already a pending invitation for this email from this coordinator
-  const [existingInvitations] = await connection.execute(
-    'SELECT id FROM company_invitations WHERE coordinator_id = ? AND company_email = ? AND status = "pending" AND expires_at > NOW()',
-    [req.user!.id, email]
-  );
-
-  if ((existingInvitations as any[]).length > 0) {
-    return res.status(400).json({ message: 'An active invitation for this email already exists' });
-  }
-
   // Check if this email is already registered as a company
   const [existingCompanies] = await connection.execute(
     'SELECT id FROM companies WHERE email = ?',
@@ -171,8 +164,8 @@ router.post('/invite-company', authenticate, authorize('coordinator'), asyncHand
     return res.status(400).json({ message: 'This email is already registered as a company' });
   }
 
-  // Generate unique invitation token
-  const token = crypto.randomBytes(32).toString('hex');
+  // Generate unique 8-digit invitation code
+  const token = Math.floor(10000000 + Math.random() * 90000000).toString();
   
   // Set expiration to 7 days from now
   const expiresAt = new Date();
@@ -325,6 +318,188 @@ router.post('/use-invitation/:token', asyncHandler(async (req: AuthRequest, res)
   }
 
   res.json({ message: 'Invitation marked as used successfully' });
+}));
+
+// Get all jobs managed by coordinator (own jobs + affiliated company jobs)
+router.get('/jobs', authenticate, authorize('coordinator'), asyncHandler(async (req: AuthRequest, res) => {
+  const connection = getConnection();
+  
+  const [jobs] = await connection.execute(`
+    SELECT 
+      j.*,
+      CASE 
+        WHEN j.created_by_type = 'coordinator' THEN 
+          CONCAT(cp.first_name, ' ', cp.last_name)
+        WHEN j.created_by_type = 'company' THEN 
+          company_p.company_name
+      END as created_by_name,
+      j.created_by_type,
+      COUNT(DISTINCT ja.id) as application_count,
+      CASE 
+        WHEN j.application_deadline <= NOW() THEN 'expired'
+        ELSE j.status
+      END as display_status,
+      CASE 
+        WHEN j.application_deadline <= NOW() THEN true 
+        ELSE false 
+      END as is_expired
+    FROM jobs j
+    LEFT JOIN coordinator_profiles cp ON j.created_by_type = 'coordinator' AND j.created_by_id = cp.coordinator_id
+    LEFT JOIN company_profiles company_p ON j.created_by_type = 'company' AND j.created_by_id = company_p.company_id
+    LEFT JOIN job_applications ja ON j.id = ja.job_id
+    WHERE (
+      (j.created_by_type = 'coordinator' AND j.created_by_id = ?)
+      OR 
+      (j.created_by_type = 'company' AND j.created_by_id IN (
+        SELECT cca.company_id 
+        FROM company_coordinator_affiliations cca
+        WHERE cca.coordinator_id = ? AND cca.status = 'active'
+      ))
+    )
+    GROUP BY j.id
+    ORDER BY j.created_at DESC
+  `, [req.user!.id, req.user!.id]);
+
+  res.json(jobs);
+}));
+
+// Rate a coordinator (users only)
+router.post('/:id/rate', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const { id: coordinatorId } = req.params;
+  const { rating, review, context, jobId } = req.body;
+
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+  }
+
+  if (!context || !['job_post', 'team_page'].includes(context)) {
+    return res.status(400).json({ message: 'Invalid context. Must be job_post or team_page' });
+  }
+
+  const connection = getConnection();
+
+  // Verify coordinator exists
+  const [coordinatorCheck] = await connection.execute(
+    'SELECT id FROM coordinators WHERE id = ?',
+    [coordinatorId]
+  );
+
+  if ((coordinatorCheck as any[]).length === 0) {
+    return res.status(404).json({ message: 'Coordinator not found' });
+  }
+
+  // Insert or update rating
+  await connection.execute(`
+    INSERT INTO coordinator_ratings (coordinator_id, user_id, rating, review, context, job_id)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE 
+    rating = VALUES(rating), 
+    review = VALUES(review),
+    context = VALUES(context),
+    job_id = VALUES(job_id),
+    updated_at = CURRENT_TIMESTAMP
+  `, [coordinatorId, req.user!.id, rating, review || null, context, jobId || null]);
+
+  // Update aggregated rating in coordinator_profiles table
+  const [ratingStats] = await connection.execute(`
+    SELECT AVG(rating) as avg_rating, COUNT(*) as count
+    FROM coordinator_ratings
+    WHERE coordinator_id = ?
+  `, [coordinatorId]);
+
+  const stats = (ratingStats as any[])[0];
+  await connection.execute(
+    'UPDATE coordinator_profiles SET average_rating = ?, rating_count = ? WHERE coordinator_id = ?',
+    [stats.avg_rating, stats.count, coordinatorId]
+  );
+
+  res.json({ 
+    message: 'Coordinator rating submitted successfully',
+    average_rating: stats.avg_rating,
+    rating_count: stats.count
+  });
+}));
+
+// Get coordinator ratings (public)
+router.get('/:id/ratings', asyncHandler(async (req, res) => {
+  const { id: coordinatorId } = req.params;
+  const connection = getConnection();
+
+  try {
+    // Verify coordinator exists
+    const [coordinatorCheck] = await connection.execute(
+      'SELECT id FROM coordinators WHERE id = ?',
+      [coordinatorId]
+    );
+
+    if ((coordinatorCheck as any[]).length === 0) {
+      return res.status(404).json({ 
+        message: 'Coordinator not found',
+        ratings: [] 
+      });
+    }
+
+    // Try to get ratings, but handle if table doesn't exist
+    let ratings = [];
+    try {
+      const [ratingsResult] = await connection.execute(`
+        SELECT 
+          cr.id,
+          cr.rating,
+          cr.review,
+          cr.context,
+          cr.created_at,
+          COALESCE(up.first_name, 'Anonymous') as first_name,
+          COALESCE(up.last_name, 'User') as last_name,
+          up.profile_photo,
+          j.title as job_title
+        FROM coordinator_ratings cr
+        LEFT JOIN user_profiles up ON cr.user_id = up.user_id
+        LEFT JOIN jobs j ON cr.job_id = j.id
+        WHERE cr.coordinator_id = ?
+        ORDER BY cr.created_at DESC
+      `, [coordinatorId]);
+      
+      ratings = ratingsResult as any[];
+    } catch (tableError) {
+      console.log('coordinator_ratings table might not exist:', tableError);
+      // Return empty ratings if table doesn't exist
+      return res.json({ ratings: [] });
+    }
+
+    // Process ratings to include photo URLs
+    const processedRatings = ratings.map(rating => ({
+      ...rating,
+      profile_photo: rating.profile_photo ? UploadService.getPhotoUrl(rating.profile_photo) : null
+    }));
+
+    res.json({ ratings: processedRatings });
+  } catch (error) {
+    console.error('Error fetching coordinator ratings:', error);
+    res.status(500).json({ 
+      message: 'Failed to fetch coordinator ratings',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      ratings: []
+    });
+  }
+}));
+
+// Get current user's coordinator rating
+router.get('/:id/my-rating', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const { id: coordinatorId } = req.params;
+  const connection = getConnection();
+
+  const [userRating] = await connection.execute(`
+    SELECT rating, review, context, job_id
+    FROM coordinator_ratings
+    WHERE coordinator_id = ? AND user_id = ?
+  `, [coordinatorId, req.user!.id]);
+
+  if ((userRating as any[]).length > 0) {
+    res.json((userRating as any[])[0]);
+  } else {
+    res.json({ rating: null, review: null, context: null, job_id: null });
+  }
 }));
 
 export default router;

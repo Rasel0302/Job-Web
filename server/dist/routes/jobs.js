@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
 import { JobRecommendationService } from '../services/jobRecommendationService.js';
+import { UploadService } from '../services/uploadService.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -84,7 +85,7 @@ router.get('/categories', asyncHandler(async (req, res) => {
 }));
 // Create a new job (coordinators and companies)
 router.post('/', authenticate, authorize('coordinator', 'company'), asyncHandler(async (req, res) => {
-    const { title, location, category, workType, workArrangement, currency, minSalary, maxSalary, description, summary, videoUrl, companyName, applicationDeadline, positionsAvailable, experienceLevel, coordinatorName, businessOwnerName, screeningQuestions, filterPreScreening } = req.body;
+    const { title, location, category, workType, workArrangement, currency, minSalary, maxSalary, description, summary, videoUrl, companyName, applicationDeadline, positionsAvailable, experienceLevel, targetStudentType, coordinatorName, businessOwnerName, screeningQuestions, filterPreScreening } = req.body;
     if (!title || !location || !category || !description) {
         return res.status(400).json({ message: 'Title, location, category, and description are required' });
     }
@@ -97,14 +98,14 @@ router.post('/', authenticate, authorize('coordinator', 'company'), asyncHandler
         title, location, category, work_type, work_arrangement, 
         currency, min_salary, max_salary, description, summary, 
         video_url, company_name, application_deadline, positions_available, 
-        experience_level, created_by_type, created_by_id, coordinator_name, 
+        experience_level, target_student_type, created_by_type, created_by_id, coordinator_name, 
         business_owner_name, filter_pre_screening
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
             title, location, category, workType || 'internship', workArrangement || 'on-site',
             currency || 'PHP', minSalary || null, maxSalary || null, description, summary || null,
             videoUrl || null, companyName || null, applicationDeadline || null, positionsAvailable || 1,
-            experienceLevel || 'entry-level', req.user.role, req.user.id, coordinatorName || null,
+            experienceLevel || 'entry-level', targetStudentType || 'both', req.user.role, req.user.id, coordinatorName || null,
             businessOwnerName || null, filterPreScreening || false
         ]);
         const jobId = jobResult.insertId;
@@ -441,6 +442,11 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
     query += ' LIMIT ? OFFSET ?';
     queryParams.push(parseInt(limit), offset);
     const [applications] = await connection.execute(query, queryParams);
+    // Process applications to convert profile_photo paths to URLs
+    const processedApplications = applications.map(app => ({
+        ...app,
+        profile_photo: UploadService.getPhotoUrl(app.profile_photo)
+    }));
     // Get total count
     let countQuery = 'SELECT COUNT(*) as total FROM job_applications WHERE job_id = ?';
     const countParams = [jobId];
@@ -451,7 +457,7 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
     const [countResult] = await connection.execute(countQuery, countParams);
     const total = countResult[0].total;
     res.json({
-        applications,
+        applications: processedApplications,
         pagination: {
             page: parseInt(page),
             limit: parseInt(limit),
@@ -551,7 +557,10 @@ router.post('/:id/applications/filter', authenticate, authorize('coordinator', '
             }
         }
         if (meetsStandards) {
-            filteredApplications.push(app);
+            filteredApplications.push({
+                ...app,
+                profile_photo: UploadService.getPhotoUrl(app.profile_photo)
+            });
         }
     }
     res.json({
@@ -592,7 +601,12 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
     const { applicationId } = req.params;
     const connection = getConnection();
     // Get application details
-    const [applications] = await connection.execute('SELECT * FROM job_applications WHERE id = ?', [applicationId]);
+    const [applications] = await connection.execute(`
+    SELECT ja.*, up.profile_photo
+    FROM job_applications ja
+    LEFT JOIN user_profiles up ON ja.user_id = up.user_id
+    WHERE ja.id = ?
+  `, [applicationId]);
     if (applications.length === 0) {
         return res.status(404).json({ message: 'Application not found' });
     }
@@ -611,6 +625,7 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
   `, [applicationId]);
     res.json({
         ...application,
+        profile_photo: UploadService.getPhotoUrl(application.profile_photo),
         screening_answers: answers
     });
 }));
@@ -638,7 +653,7 @@ router.get('/applications/:applicationId/comments', authenticate, authorize('coo
 // Update job (coordinators and companies - only their own jobs)
 router.put('/:id', authenticate, authorize('coordinator', 'company'), asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { title, location, category, workType, workArrangement, currency, minSalary, maxSalary, description, summary, videoUrl, companyName, applicationDeadline, positionsAvailable, experienceLevel, coordinatorName, businessOwnerName, screeningQuestions, status } = req.body;
+    const { title, location, category, workType, workArrangement, currency, minSalary, maxSalary, description, summary, videoUrl, companyName, applicationDeadline, positionsAvailable, experienceLevel, targetStudentType, coordinatorName, businessOwnerName, screeningQuestions, status } = req.body;
     if (!title || !location || !category || !description) {
         return res.status(400).json({ message: 'Title, location, category, and description are required' });
     }
@@ -660,14 +675,14 @@ router.put('/:id', authenticate, authorize('coordinator', 'company'), asyncHandl
         title = ?, location = ?, category = ?, work_type = ?, work_arrangement = ?, 
         currency = ?, min_salary = ?, max_salary = ?, description = ?, summary = ?, 
         video_url = ?, company_name = ?, application_deadline = ?, positions_available = ?, 
-        experience_level = ?, coordinator_name = ?, business_owner_name = ?, status = ?,
+        experience_level = ?, target_student_type = ?, coordinator_name = ?, business_owner_name = ?, status = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
             title, location, category, workType || 'internship', workArrangement || 'on-site',
             currency || 'PHP', minSalary || null, maxSalary || null, description, summary || null,
             videoUrl || null, companyName || null, applicationDeadline || null, positionsAvailable || 1,
-            experienceLevel || 'entry-level', coordinatorName || null, businessOwnerName || null,
+            experienceLevel || 'entry-level', targetStudentType || 'both', coordinatorName || null, businessOwnerName || null,
             status || 'active', id
         ]);
         // Delete existing screening questions

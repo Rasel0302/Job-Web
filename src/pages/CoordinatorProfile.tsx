@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'react-hot-toast';
 import { ProfilePhotoUpload } from '../components/ProfilePhotoUpload';
+import { RatingDisplay } from '../components/RatingDisplay';
 import { api } from '../services/api';
 import { 
   UserCircleIcon, 
@@ -12,7 +13,8 @@ import {
   AcademicCapIcon,
   XMarkIcon,
   CheckIcon,
-  CameraIcon
+  CameraIcon,
+  StarIcon
 } from '@heroicons/react/24/outline';
 
 interface CoordinatorProfileData {
@@ -26,6 +28,8 @@ interface CoordinatorProfileData {
   gender?: string;
   designated_course?: string;
   profile_photo?: string;
+  average_rating?: number;
+  rating_count?: number;
   is_profile_complete?: boolean;
 }
 
@@ -50,7 +54,7 @@ export const CoordinatorProfile: React.FC = () => {
 
   const fetchProfile = async () => {
     try {
-      const response = await api.get('/coordinator/profile');
+      const response = await api.get('/coordinators/profile');
       const data = response.data;
       setProfileData(data);
       
@@ -134,7 +138,7 @@ export const CoordinatorProfile: React.FC = () => {
         profilePhotoUrl: profileData.profile_photo, // Include current photo URL
       };
 
-      await api.put('/coordinator/profile', updateData);
+      await api.put('/coordinators/profile', updateData);
       toast.success('Profile updated successfully');
       
       // Refresh profile data
@@ -472,6 +476,31 @@ export const CoordinatorProfile: React.FC = () => {
                   <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     Course Coordinator
                   </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Rating Information */}
+            <div className="border-t border-gray-200 pt-8">
+              <div className="bg-white shadow rounded-lg overflow-hidden">
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 px-6 py-4 border-b border-purple-200">
+                  <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                    <StarIcon className="h-6 w-6 mr-3 text-purple-500" />
+                    My Ratings & Reviews
+                  </h2>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Ratings from users who have interacted with you through job posts or the team page
+                  </p>
+                </div>
+                
+                <div className="p-6">
+                  <RatingDisplay
+                    entityId={profileData.id}
+                    entityType="coordinator"
+                    averageRating={profileData.average_rating}
+                    totalCount={profileData.rating_count}
+                    showDetails={true}
+                  />
                 </div>
               </div>
             </div>

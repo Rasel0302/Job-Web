@@ -13,6 +13,18 @@ import { AdminCompleteProfile } from './pages/AdminCompleteProfile';
 import { AdminPendingApproval } from './pages/AdminPendingApproval';
 import { CoordinatorCompleteProfile } from './pages/CoordinatorCompleteProfile';
 import { CoordinatorPendingApproval } from './pages/CoordinatorPendingApproval';
+import { CompanyCompleteProfile } from './pages/CompanyCompleteProfile';
+import { CompanyDashboard } from './pages/company/CompanyDashboard';
+import { CompanyProfile } from './pages/company/CompanyProfile';
+import { CompanyEditProfile } from './pages/company/CompanyEditProfile';
+import { CompanyEditJob } from './pages/company/CompanyEditJob';
+import { CompanyCreateJob } from './pages/company/CompanyCreateJob';
+import { CompanyJobs } from './pages/company/CompanyJobs';
+import { CompanyApplications } from './pages/company/CompanyApplications';
+import { CompanyAllApplications } from './pages/company/CompanyAllApplications';
+import { CompanyApplicationsAccepted } from './pages/company/CompanyApplicationsAccepted';
+import { CompanyApplicationsRejected } from './pages/company/CompanyApplicationsRejected';
+import { CompanyApplicationsOnHold } from './pages/company/CompanyApplicationsOnHold';
 import { CoordinatorProfile } from './pages/CoordinatorProfile';
 import { CoordinatorDashboard } from './pages/CoordinatorDashboard';
 import { CreateJob } from './pages/CreateJob';
@@ -50,6 +62,7 @@ function App() {
           <Route path="/admin/pending-approval" element={<AdminPendingApproval />} />
           <Route path="/coordinator/complete-profile" element={<CoordinatorCompleteProfile />} />
           <Route path="/coordinator/pending-approval" element={<CoordinatorPendingApproval />} />
+          <Route path="/company/complete-profile" element={<CompanyCompleteProfile />} />
           <Route 
             path="/coordinator/profile" 
             element={
@@ -166,6 +179,96 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['user']}>
                   <ResumeEditor />
+                </ProtectedRoute>
+              } 
+            />
+
+            {/* Company Routes */}
+            <Route 
+              path="/company/dashboard" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyDashboard /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/profile" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyProfile /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/profile/edit" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyEditProfile /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/jobs" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyJobs /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/jobs/create" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyCreateJob /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/jobs/:id/edit" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyEditJob /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/jobs/:jobId/applications" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyApplications /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/applications" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyAllApplications /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/applications/accepted" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyApplicationsAccepted /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/applications/rejected" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyApplicationsRejected /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/company/applications/on-hold" 
+              element={
+                <ProtectedRoute allowedRoles={['company']}>
+                  <Layout><CompanyApplicationsOnHold /></Layout>
                 </ProtectedRoute>
               } 
             />

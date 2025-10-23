@@ -12,7 +12,8 @@ import {
   ClockIcon,
   UserGroupIcon,
   CheckCircleIcon,
-  XCircleIcon
+  XCircleIcon,
+  ExclamationCircleIcon
 } from '@heroicons/react/24/outline';
 
 interface Job {
@@ -23,9 +24,13 @@ interface Job {
   work_type: string;
   work_arrangement: string;
   status: string;
+  display_status?: 'pending' | 'active' | 'closed' | 'rejected' | 'expired';
+  is_expired?: boolean;
   application_count: number;
   positions_available: number;
   application_deadline: string;
+  created_by_type: 'coordinator' | 'company';
+  created_by_name: string;
   created_at: string;
   updated_at: string;
 }
@@ -47,8 +52,8 @@ export const CoordinatorManageJobs: React.FC = () => {
   const fetchJobs = async () => {
     try {
       setLoading(true);
-      const response = await api.get(`/jobs?createdBy=coordinator:${user?.id}&limit=1000`);
-      setJobs(response.data.jobs || []);
+      const response = await api.get('/coordinators/jobs');
+      setJobs(response.data || []);
     } catch (error: any) {
       console.error('Failed to fetch jobs:', error);
       toast.error('Failed to load jobs');
@@ -72,12 +77,15 @@ export const CoordinatorManageJobs: React.FC = () => {
     }
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (job: Job) => {
+    const status = job.display_status || job.status;
     const statusConfig = {
       active: { color: 'bg-green-100 text-green-800', icon: CheckCircleIcon },
+      pending: { color: 'bg-yellow-100 text-yellow-800', icon: ClockIcon },
       draft: { color: 'bg-gray-100 text-gray-800', icon: ClockIcon },
       paused: { color: 'bg-yellow-100 text-yellow-800', icon: ClockIcon },
-      closed: { color: 'bg-red-100 text-red-800', icon: XCircleIcon }
+      closed: { color: 'bg-red-100 text-red-800', icon: XCircleIcon },
+      expired: { color: 'bg-orange-100 text-orange-800', icon: ExclamationCircleIcon }
     };
 
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.draft;
@@ -94,7 +102,8 @@ export const CoordinatorManageJobs: React.FC = () => {
   const filteredJobs = jobs.filter(job => {
     const matchesSearch = job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           job.category.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+    const displayStatus = job.display_status || job.status;
+    const matchesStatus = statusFilter === 'all' || displayStatus === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -120,7 +129,7 @@ export const CoordinatorManageJobs: React.FC = () => {
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Manage Job Postings</h1>
               <p className="mt-2 text-gray-600">
-                View, edit, and manage all your job postings in one place.
+                View, edit, and manage your job postings and affiliated company jobs in one place.
               </p>
             </div>
             <Link
@@ -159,6 +168,8 @@ export const CoordinatorManageJobs: React.FC = () => {
               >
                 <option value="all">All Statuses</option>
                 <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="expired">Expired</option>
                 <option value="draft">Draft</option>
                 <option value="paused">Paused</option>
                 <option value="closed">Closed</option>
@@ -166,6 +177,40 @@ export const CoordinatorManageJobs: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Expired Jobs Alert */}
+        {(() => {
+          const expiredJobs = jobs.filter(job => job.display_status === 'expired' || job.is_expired);
+          const ownExpiredJobs = expiredJobs.filter(job => job.created_by_type === 'coordinator');
+          
+          if (expiredJobs.length > 0) {
+            return (
+              <div className="mb-6 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <ExclamationCircleIcon className="h-6 w-6 text-orange-500 mt-0.5 mr-3" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-orange-800">
+                      Jobs Past Deadline
+                    </h3>
+                    <div className="mt-2 text-sm text-orange-700">
+                      <p>
+                        {expiredJobs.length} job{expiredJobs.length !== 1 ? 's have' : ' has'} passed {expiredJobs.length !== 1 ? 'their' : 'its'} application deadline
+                        {ownExpiredJobs.length > 0 && ` (${ownExpiredJobs.length} of your own jobs)`}.
+                        Expired jobs are no longer visible to applicants.
+                      </p>
+                      {ownExpiredJobs.length > 0 && (
+                        <p className="mt-1">
+                          <strong>Action required:</strong> Contact the company to renew deadlines or delete expired job posts.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {/* Jobs List */}
         {filteredJobs.length === 0 ? (
@@ -205,6 +250,9 @@ export const CoordinatorManageJobs: React.FC = () => {
                       Category
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Posted By
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -237,7 +285,17 @@ export const CoordinatorManageJobs: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        {getStatusBadge(job.status)}
+                        <div className="text-sm text-gray-900">{job.created_by_name || 'N/A'}</div>
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          job.created_by_type === 'coordinator' 
+                            ? 'bg-blue-100 text-blue-800' 
+                            : 'bg-purple-100 text-purple-800'
+                        }`}>
+                          {job.created_by_type === 'coordinator' ? 'Your Job' : 'Company Job'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {getStatusBadge(job)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
@@ -262,13 +320,15 @@ export const CoordinatorManageJobs: React.FC = () => {
                           >
                             <EyeIcon className="h-4 w-4" />
                           </Link>
-                          <Link
-                            to={`/coordinator/jobs/${job.id}/edit`}
-                            className="text-indigo-600 hover:text-indigo-900"
-                            title="Edit Job"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </Link>
+                          {job.created_by_type === 'coordinator' && (
+                            <Link
+                              to={`/coordinator/jobs/${job.id}/edit`}
+                              className="text-indigo-600 hover:text-indigo-900"
+                              title="Edit Job"
+                            >
+                              <PencilIcon className="h-4 w-4" />
+                            </Link>
+                          )}
                           <Link
                             to={`/jobs/${job.id}/applications`}
                             className="text-green-600 hover:text-green-900"
@@ -276,13 +336,15 @@ export const CoordinatorManageJobs: React.FC = () => {
                           >
                             <UserGroupIcon className="h-4 w-4" />
                           </Link>
-                          <button
-                            onClick={() => setDeleteJobId(job.id)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete Job"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
+                          {job.created_by_type === 'coordinator' && (
+                            <button
+                              onClick={() => setDeleteJobId(job.id)}
+                              className="text-red-600 hover:text-red-900"
+                              title="Delete Job"
+                            >
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

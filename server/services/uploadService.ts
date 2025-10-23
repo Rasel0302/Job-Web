@@ -61,6 +61,12 @@ export class UploadService {
 
   static getPhotoUrl(photoPath: string | null): string | null {
     if (!photoPath) return null;
+    
+    // If photoPath is already a full URL, return it as-is
+    if (photoPath.startsWith('http://') || photoPath.startsWith('https://')) {
+      return photoPath;
+    }
+    
     const baseUrl = process.env.BACKEND_URL || 'http://localhost:5000';
     return `${baseUrl}/api/uploads/${photoPath.replace('uploads/', '')}`;
   }

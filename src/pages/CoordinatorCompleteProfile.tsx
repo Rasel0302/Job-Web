@@ -70,7 +70,7 @@ export const CoordinatorCompleteProfile: React.FC = () => {
         age: parseInt(coordinatorProfile.age)
       };
 
-      await api.post('/coordinator/complete-profile', profileData);
+      await api.post('/coordinators/complete-profile', profileData);
       
       toast.success('Profile completed successfully! Please wait for approval from an admin.');
       

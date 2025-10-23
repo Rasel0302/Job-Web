@@ -52,12 +52,11 @@ export const CoordinatorEditJob: React.FC = () => {
     description: '',
     summary: '',
     videoUrl: '',
-    companyName: '',
     applicationDeadline: '',
     positionsAvailable: '1',
     experienceLevel: 'entry-level',
+    targetStudentType: 'both',
     coordinatorName: '',
-    businessOwnerName: '',
     status: 'active',
     filterPreScreening: false
   });
@@ -193,12 +192,11 @@ export const CoordinatorEditJob: React.FC = () => {
         description: job.description || '',
         summary: job.summary || '',
         videoUrl: job.video_url || '',
-        companyName: job.company_name || '',
         applicationDeadline: job.application_deadline || '',
         positionsAvailable: job.positions_available ? job.positions_available.toString() : '1',
         experienceLevel: job.experience_level || 'entry-level',
+        targetStudentType: job.target_student_type || 'both',
         coordinatorName: job.coordinator_name || '',
-        businessOwnerName: job.business_owner_name || '',
         status: job.status || 'active',
         filterPreScreening: job.filter_pre_screening || false
       });
@@ -490,6 +488,23 @@ export const CoordinatorEditJob: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Target Student Type
+                </label>
+                <select
+                  name="targetStudentType"
+                  value={formData.targetStudentType}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="both">Both OJT & Graduated</option>
+                  <option value="ojt">OJT Students Only</option>
+                  <option value="graduated">Graduated Students Only</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Who can apply for this position</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Application Deadline
                 </label>
                 <input
@@ -607,35 +622,6 @@ export const CoordinatorEditJob: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Company Name
-                  </label>
-                  <input
-                    type="text"
-                    name="companyName"
-                    value={formData.companyName}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Company name (if different from coordinator)"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Business Owner Name
-                  </label>
-                  <input
-                    type="text"
-                    name="businessOwnerName"
-                    value={formData.businessOwnerName}
-                    onChange={handleInputChange}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Business owner or hiring manager"
-                  />
-                </div>
-              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1077,6 +1063,7 @@ export const CoordinatorEditJob: React.FC = () => {
                         <li>Experience Level: {formData.experienceLevel || 'Entry Level'}</li>
                         <li>Positions Available: {formData.positionsAvailable || '1'} position{formData.positionsAvailable !== '1' ? 's' : ''}</li>
                         {formData.applicationDeadline && <li>Deadline: {new Date(formData.applicationDeadline).toLocaleDateString()}</li>}
+                        <li>Target Students: {formData.targetStudentType === 'both' ? 'OJT & Graduated' : formData.targetStudentType === 'ojt' ? 'OJT Students Only' : 'Graduated Students Only'}</li>
                         <li>Status: {formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}</li>
                       </ul>
                     </div>
@@ -1084,8 +1071,6 @@ export const CoordinatorEditJob: React.FC = () => {
                       <h3 className="font-medium text-gray-900 mb-2">Posted By</h3>
                       <ul className="space-y-1 text-sm text-gray-600">
                         {formData.coordinatorName && <li>Coordinator: {formData.coordinatorName}</li>}
-                        {formData.businessOwnerName && <li>Business Owner: {formData.businessOwnerName}</li>}
-                        {formData.companyName && <li>Company: {formData.companyName}</li>}
                       </ul>
                     </div>
                   </div>

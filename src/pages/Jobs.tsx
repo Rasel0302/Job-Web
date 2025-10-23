@@ -13,6 +13,7 @@ import {
   UserGroupIcon,
   StarIcon
 } from '@heroicons/react/24/outline';
+import { RatingDisplay } from '../components/RatingDisplay';
 
 interface Job {
   id: number;
@@ -373,12 +374,13 @@ export const Jobs: React.FC = () => {
                     </h3>
                     <div className="flex items-center space-x-2">
                       {job.average_rating > 0 && (
-                        <div className="flex items-center">
-                          <StarIcon className="h-4 w-4 text-yellow-400 fill-current" />
-                          <span className="text-sm text-gray-600 ml-1">
-                            {job.average_rating.toFixed(1)} ({job.rating_count})
-                          </span>
-                        </div>
+                        <RatingDisplay
+                          entityId={job.id}
+                          entityType="job"
+                          averageRating={job.average_rating}
+                          totalCount={job.rating_count}
+                          showDetails={false}
+                        />
                       )}
                     </div>
                   </div>

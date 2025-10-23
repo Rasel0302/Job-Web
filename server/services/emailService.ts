@@ -481,7 +481,7 @@ class EmailService {
             margin: 20px 0; 
             font-weight: bold; 
           }
-          .token-info { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0; }
+          .code-info { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0; }
           .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }
           .expiry-notice { background-color: #f8d7da; border: 1px solid #f1c2c2; padding: 10px; border-radius: 5px; margin: 15px 0; }
         </style>
@@ -518,11 +518,11 @@ class EmailService {
               <li><strong>Build Your Team:</strong> Find the right talent for your company</li>
             </ul>
             
-            <div class="token-info">
+            <div class="code-info">
               <h4>🔑 Your Invitation Details:</h4>
-              <p><strong>Invitation Token:</strong> <code>${params.invitationToken}</code></p>
+              <p><strong>Invitation Code:</strong> <code>${params.invitationToken}</code></p>
               <p><strong>Invited Email:</strong> ${params.recipientEmail}</p>
-              <p><em>You'll need this token during registration to verify your invitation.</em></p>
+              <p><em>You'll need this code during registration to verify your invitation.</em></p>
             </div>
             
             <div style="text-align: center;">
@@ -537,7 +537,7 @@ class EmailService {
             <ol style="line-height: 1.8;">
               <li>Click the registration button above</li>
               <li>Select "Company/Business Owner" during registration</li>
-              <li>Use your invitation token: <strong>${params.invitationToken}</strong></li>
+              <li>Use your invitation code: <strong>${params.invitationToken}</strong></li>
               <li>Complete your company profile</li>
               <li>Start posting jobs and finding talent!</li>
             </ol>

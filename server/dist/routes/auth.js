@@ -87,7 +87,7 @@ router.post('/register/coordinator', asyncHandler(async (req, res) => {
 router.post('/register/company', asyncHandler(async (req, res) => {
     const { email, password, invitationToken } = req.body;
     if (!email || !password || !invitationToken) {
-        return res.status(400).json({ message: 'Email, password, and invitation token are required' });
+        return res.status(400).json({ message: 'Email, password, and invitation code are required' });
     }
     if (!validateEmail(email)) {
         return res.status(400).json({ message: 'Invalid email format' });
@@ -109,7 +109,7 @@ router.post('/register/company', asyncHandler(async (req, res) => {
     WHERE token = ? AND status = 'pending' AND expires_at > NOW()
   `, [invitationToken]);
     if (invitations.length === 0) {
-        return res.status(400).json({ message: 'Invalid or expired invitation token' });
+        return res.status(400).json({ message: 'Invalid or expired invitation code' });
     }
     const invitation = invitations[0];
     // Check if the email matches the invitation
@@ -128,15 +128,17 @@ router.post('/register/company', asyncHandler(async (req, res) => {
     // Store OTP
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
     await connection.execute('INSERT INTO otp_verifications (email, otp_code, purpose, expires_at) VALUES (?, ?, ?, ?)', [email, otp, 'registration', otpExpires]);
-    // Create company
-    const [result] = await connection.execute('INSERT INTO companies (email, password_hash, verification_token) VALUES (?, ?, ?)', [email, hashedPassword, verificationToken]);
+    // Create company with coordinator affiliation (auto-approved since they have invitation)
+    const [result] = await connection.execute('INSERT INTO companies (email, password_hash, verification_token, invited_by_coordinator_id, is_approved) VALUES (?, ?, ?, ?, TRUE)', [email, hashedPassword, verificationToken, invitation.coordinator_id]);
     const companyId = result.insertId;
     // Mark invitation as used
     await connection.execute('UPDATE company_invitations SET status = "used", used_at = NOW(), company_id = ? WHERE id = ?', [companyId, invitation.id]);
+    // Create coordinator affiliation record
+    await connection.execute('INSERT INTO company_coordinator_affiliations (company_id, coordinator_id, invitation_id) VALUES (?, ?, ?)', [companyId, invitation.coordinator_id, invitation.id]);
     // Send OTP email
     await emailService.sendOTP(email, otp, 'company registration');
     res.status(201).json({
-        message: 'Company registered successfully. Please verify your email and wait for approval.',
+        message: 'Company registered successfully. Please verify your email to continue.',
         companyId: companyId
     });
 }));
@@ -265,8 +267,11 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
         // Update user verification status
         await connection.execute(`UPDATE ${userTable} SET is_verified = TRUE WHERE email = ?`, [email]);
         console.log(`User verified successfully in ${userTable} table for ${userRole}`);
-        // Get user details for response
-        const [userDetails] = await connection.execute(`SELECT id, email FROM ${userTable} WHERE email = ?`, [email]);
+        // Get user details for response (include is_approved for non-user roles)
+        const selectQuery = userRole === 'user'
+            ? `SELECT id, email FROM ${userTable} WHERE email = ?`
+            : `SELECT id, email, is_approved FROM ${userTable} WHERE email = ?`;
+        const [userDetails] = await connection.execute(selectQuery, [email]);
         const user = userDetails[0];
         user.role = userRole;
         // Generate JWT token
@@ -305,6 +310,21 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
                     email: user.email,
                     role: user.role,
                     isVerified: true
+                },
+                requiresProfileCompletion: true,
+                nextStep: 'complete-profile'
+            });
+        }
+        else if (userRole === 'company') {
+            return res.json({
+                message: '✅ Email verified! Please complete your company/business profile to continue.',
+                token,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    role: user.role,
+                    isVerified: true,
+                    isApproved: user.is_approved ?? true // Companies are auto-approved
                 },
                 requiresProfileCompletion: true,
                 nextStep: 'complete-profile'

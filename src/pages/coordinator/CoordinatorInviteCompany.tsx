@@ -41,7 +41,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
 
   const fetchCoordinatorInfo = async () => {
     try {
-      const response = await api.get('/coordinator/profile');
+      const response = await api.get('/coordinators/profile');
       const profile = response.data;
       setCoordinatorInfo({
         email: user?.email || '',
@@ -54,7 +54,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
 
   const fetchInvitationHistory = async () => {
     try {
-      const response = await api.get('/coordinator/invitations');
+      const response = await api.get('/coordinators/invitations');
       setInvitationHistory(response.data);
     } catch (error) {
       console.error('Failed to fetch invitation history:', error);
@@ -76,7 +76,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
 
     setLoading(true);
     try {
-      await api.post('/coordinator/invite-company', {
+      await api.post('/coordinators/invite-company', {
         email: formData.email.trim(),
         message: formData.message.trim()
       });
@@ -245,7 +245,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
                     2
                   </div>
                   <p className="text-sm text-gray-600">
-                    An email with a unique registration token will be sent to the company.
+                    An email with a unique registration code will be sent to the company.
                   </p>
                 </div>
                 <div className="flex items-start">
@@ -253,7 +253,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
                     3
                   </div>
                   <p className="text-sm text-gray-600">
-                    The company can use the token to register and start posting jobs on your platform.
+                    The company can use the code to register and start posting jobs on your platform.
                   </p>
                 </div>
               </div>
@@ -265,7 +265,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
                 <div>
                   <h4 className="text-sm font-medium text-yellow-800">Important Note</h4>
                   <p className="mt-1 text-sm text-yellow-700">
-                    Each invitation token is valid for 7 days and can only be used once. Make sure to send invitations to verified company email addresses.
+                    Each invitation code is valid for 7 days and can only be used once. Make sure to send invitations to verified company email addresses.
                   </p>
                 </div>
               </div>
@@ -310,7 +310,7 @@ export const CoordinatorInviteCompany: React.FC = () => {
                         "{invitation.message}"
                       </p>
                       <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>Token: {invitation.token.substring(0, 8)}...</span>
+                        <span>Code: {invitation.token}</span>
                         {invitation.used_at && (
                           <span>Used: {new Date(invitation.used_at).toLocaleDateString()}</span>
                         )}

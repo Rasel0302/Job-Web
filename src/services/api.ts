@@ -81,6 +81,9 @@ export const userAPI = {
   updateProfile: (data: any) => apiClient.put('/users/profile', data),
   getCourses: () => apiClient.get('/users/courses'),
   getNavbarInfo: () => apiClient.get('/users/navbar-info'),
+  getDashboardStats: () => apiClient.get('/users/dashboard-stats'),
+  getRecentActivity: () => apiClient.get('/users/recent-activity'),
+  getMyRatings: () => apiClient.get('/users/my-ratings'),
   uploadPhoto: (photoFile: File) => {
     const formData = new FormData();
     formData.append('profilePhoto', photoFile);
@@ -152,5 +155,41 @@ export const adminAPI = {
 
 // Named export for compatibility
 export const api = apiClient;
+
+// Job Rating APIs
+export const jobRatingAPI = {
+  rateJob: (jobId: number, data: { rating: number; review?: string }) => 
+    apiClient.post(`/jobs/${jobId}/rate`, data),
+  getJobRatings: (jobId: number) => apiClient.get(`/jobs/${jobId}/ratings`),
+  getMyJobRating: (jobId: number) => apiClient.get(`/jobs/${jobId}/my-rating`),
+};
+
+// Coordinator Rating APIs
+export const coordinatorRatingAPI = {
+  rateCoordinator: (coordinatorId: number, data: { 
+    rating: number; 
+    review?: string; 
+    context: 'job_post' | 'team_page';
+    jobId?: number;
+  }) => apiClient.post(`/coordinators/${coordinatorId}/rate`, data),
+  getCoordinatorRatings: (coordinatorId: number) => 
+    apiClient.get(`/coordinators/${coordinatorId}/ratings`),
+  getMyCoordinatorRating: (coordinatorId: number) => 
+    apiClient.get(`/coordinators/${coordinatorId}/my-rating`),
+};
+
+// Company Rating APIs
+export const companyRatingAPI = {
+  rateCompany: (companyId: number, data: { 
+    rating: number; 
+    review?: string; 
+    context: 'job_post' | 'team_page';
+    jobId?: number;
+  }) => apiClient.post(`/companies/${companyId}/rate`, data),
+  getCompanyRatings: (companyId: number) => 
+    apiClient.get(`/companies/${companyId}/ratings`),
+  getMyCompanyRating: (companyId: number) => 
+    apiClient.get(`/companies/${companyId}/my-rating`),
+};
 
 export default apiClient;

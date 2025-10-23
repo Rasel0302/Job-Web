@@ -68,7 +68,7 @@ app.use('/api/companies', companyRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/resumes', resumeRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/coordinator', coordinatorRoutes);
+app.use('/api/coordinators', coordinatorRoutes);
 app.use('/api/upload', uploadRoutes);
 
 // Health check endpoint

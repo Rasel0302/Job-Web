@@ -142,7 +142,7 @@ router.get('/navbar-info', authenticate, asyncHandler(async (req, res) => {
             break;
         case 'company':
             const [companyProfile] = await connection.execute(`
-        SELECT company_name as first_name, '' as last_name, company_logo as profile_photo FROM company_profiles WHERE company_id = ?
+        SELECT company_name as first_name, '' as last_name, profile_photo FROM company_profiles WHERE company_id = ?
       `, [req.user.id]);
             userInfo = companyProfile[0];
             break;
@@ -153,21 +153,11 @@ router.get('/navbar-info', authenticate, asyncHandler(async (req, res) => {
             userInfo = adminProfile[0];
             break;
     }
-    // Handle profile photo URL differently for admins and coordinators (they store full URLs)
+    // Process profile photo URL
     let profilePhotoUrl = null;
     if (userInfo?.profile_photo) {
-        if (req.user.role === 'admin') {
-            // Admin profile photos are stored as full URLs
-            profilePhotoUrl = userInfo.profile_photo;
-        }
-        else if (req.user.role === 'coordinator') {
-            // Coordinator profile photos are also stored as full URLs
-            profilePhotoUrl = userInfo.profile_photo;
-        }
-        else {
-            // Other user types store file paths
-            profilePhotoUrl = UploadService.getPhotoUrl(userInfo.profile_photo);
-        }
+        // All profile photos (user, coordinator, company, admin) need to be processed with UploadService
+        profilePhotoUrl = UploadService.getPhotoUrl(userInfo.profile_photo);
     }
     res.json({
         firstName: userInfo?.first_name || '',
@@ -217,6 +207,39 @@ router.get('/coordinators/approved', asyncHandler(async (req, res) => {
       AND cp.designated_course IS NOT NULL
     ORDER BY cp.first_name ASC, cp.last_name ASC
   `);
-    res.json(coordinators);
+    // Process profile photo URLs
+    const processedCoordinators = coordinators.map(coord => ({
+        ...coord,
+        profile_photo: UploadService.getPhotoUrl(coord.profile_photo)
+    }));
+    res.json(processedCoordinators);
+}));
+// Get approved companies/business owners (public endpoint)
+router.get('/companies/approved', asyncHandler(async (req, res) => {
+    const connection = getConnection();
+    const [companies] = await connection.execute(`
+    SELECT 
+      c.id,
+      cp.company_name,
+      cp.profile_type,
+      cp.first_name,
+      cp.last_name,
+      cp.business_summary,
+      cp.profile_photo
+    FROM companies c
+    INNER JOIN company_profiles cp ON c.id = cp.company_id
+    WHERE c.is_verified = TRUE 
+      AND c.is_approved = TRUE 
+      AND cp.profile_completed = TRUE
+      AND cp.company_name IS NOT NULL
+      AND cp.business_summary IS NOT NULL
+    ORDER BY cp.company_name ASC
+  `);
+    // Process profile photo URLs
+    const processedCompanies = companies.map(company => ({
+        ...company,
+        profile_photo: UploadService.getPhotoUrl(company.profile_photo)
+    }));
+    res.json(processedCompanies);
 }));
 export default router;

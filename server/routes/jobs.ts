@@ -3,6 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
 import { JobRecommendationService } from '../services/jobRecommendationService.js';
+import { UploadService } from '../services/uploadService.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -115,6 +116,7 @@ router.post('/', authenticate, authorize('coordinator', 'company'), asyncHandler
     applicationDeadline,
     positionsAvailable,
     experienceLevel,
+    targetStudentType,
     coordinatorName,
     businessOwnerName,
     screeningQuestions,
@@ -136,14 +138,14 @@ router.post('/', authenticate, authorize('coordinator', 'company'), asyncHandler
         title, location, category, work_type, work_arrangement, 
         currency, min_salary, max_salary, description, summary, 
         video_url, company_name, application_deadline, positions_available, 
-        experience_level, created_by_type, created_by_id, coordinator_name, 
+        experience_level, target_student_type, created_by_type, created_by_id, coordinator_name, 
         business_owner_name, filter_pre_screening
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       title, location, category, workType || 'internship', workArrangement || 'on-site',
       currency || 'PHP', minSalary || null, maxSalary || null, description, summary || null,
       videoUrl || null, companyName || null, applicationDeadline || null, positionsAvailable || 1,
-      experienceLevel || 'entry-level', req.user!.role, req.user!.id, coordinatorName || null,
+      experienceLevel || 'entry-level', targetStudentType || 'both', req.user!.role, req.user!.id, coordinatorName || null,
       businessOwnerName || null, filterPreScreening || false
     ]);
 
@@ -202,16 +204,17 @@ router.get('/', asyncHandler(async (req, res) => {
         WHEN j.created_by_type = 'coordinator' THEN 
           COALESCE(CONCAT(cp.first_name, ' ', cp.last_name), j.coordinator_name, 'Unknown Coordinator')
         WHEN j.created_by_type = 'company' THEN 
-          COALESCE(j.company_name, j.business_owner_name, 'Unknown Company')
+          COALESCE(company_p.company_name, j.company_name, j.business_owner_name, 'Unknown Company')
       END as created_by_name,
       COUNT(ja.id) as application_count,
       AVG(jr.rating) as average_rating,
       COUNT(jr.id) as rating_count
     FROM jobs j
     LEFT JOIN coordinator_profiles cp ON j.created_by_type = 'coordinator' AND j.created_by_id = cp.coordinator_id
+    LEFT JOIN company_profiles company_p ON j.created_by_type = 'company' AND j.created_by_id = company_p.company_id
     LEFT JOIN job_applications ja ON j.id = ja.job_id
     LEFT JOIN job_ratings jr ON j.id = jr.job_id
-    WHERE j.status = 'active'
+    WHERE j.status = 'active' AND j.application_deadline > NOW()
   `;
   
   const queryParams: any[] = [];
@@ -362,13 +365,14 @@ router.get('/:id', asyncHandler(async (req, res) => {
         WHEN j.created_by_type = 'coordinator' THEN 
           COALESCE(CONCAT(cp.first_name, ' ', cp.last_name), j.coordinator_name, 'Unknown Coordinator')
         WHEN j.created_by_type = 'company' THEN 
-          COALESCE(j.company_name, j.business_owner_name, 'Unknown Company')
+          COALESCE(company_p.company_name, j.company_name, j.business_owner_name, 'Unknown Company')
       END as created_by_name,
       COUNT(ja.id) as application_count,
       AVG(jr.rating) as average_rating,
       COUNT(jr.id) as rating_count
     FROM jobs j
     LEFT JOIN coordinator_profiles cp ON j.created_by_type = 'coordinator' AND j.created_by_id = cp.coordinator_id
+    LEFT JOIN company_profiles company_p ON j.created_by_type = 'company' AND j.created_by_id = company_p.company_id
     LEFT JOIN job_applications ja ON j.id = ja.job_id
     LEFT JOIN job_ratings jr ON j.id = jr.job_id
     WHERE j.id = ?
@@ -518,6 +522,7 @@ router.post('/:id/rate', authenticate, authorize('user'), asyncHandler(async (re
 
   const connection = getConnection();
 
+  // Insert or update rating
   await connection.execute(`
     INSERT INTO job_ratings (job_id, user_id, rating, review) 
     VALUES (?, ?, ?, ?)
@@ -527,7 +532,80 @@ router.post('/:id/rate', authenticate, authorize('user'), asyncHandler(async (re
     updated_at = CURRENT_TIMESTAMP
   `, [jobId, req.user!.id, rating, review || null]);
 
-  res.json({ message: 'Rating submitted successfully' });
+  // Update aggregated rating in jobs table
+  const [ratingStats] = await connection.execute(`
+    SELECT AVG(rating) as avg_rating, COUNT(*) as count
+    FROM job_ratings
+    WHERE job_id = ?
+  `, [jobId]);
+
+  const stats = (ratingStats as any[])[0];
+  await connection.execute(
+    'UPDATE jobs SET average_rating = ?, rating_count = ? WHERE id = ?',
+    [stats.avg_rating, stats.count, jobId]
+  );
+
+  res.json({ 
+    message: 'Job rating submitted successfully',
+    average_rating: stats.avg_rating,
+    rating_count: stats.count
+  });
+}));
+
+// Get job ratings (public)
+router.get('/:id/ratings', asyncHandler(async (req, res) => {
+  const { id: jobId } = req.params;
+  const connection = getConnection();
+
+  try {
+    // Get all ratings for this job with user details
+    const [ratings] = await connection.execute(`
+      SELECT 
+        jr.id,
+        jr.rating,
+        jr.review,
+        jr.created_at,
+        up.first_name,
+        up.last_name,
+        up.profile_photo
+      FROM job_ratings jr
+      LEFT JOIN user_profiles up ON jr.user_id = up.user_id
+      WHERE jr.job_id = ?
+      ORDER BY jr.created_at DESC
+    `, [jobId]);
+
+    // Process ratings to include photo URLs
+    const processedRatings = (ratings as any[]).map(rating => ({
+      ...rating,
+      profile_photo: rating.profile_photo ? UploadService.getPhotoUrl(rating.profile_photo) : null
+    }));
+
+    res.json({ ratings: processedRatings });
+  } catch (error) {
+    console.error('Error fetching job ratings:', error);
+    res.status(500).json({ 
+      message: 'Failed to fetch job ratings',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// Get current user's job rating
+router.get('/:id/my-rating', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const { id: jobId } = req.params;
+  const connection = getConnection();
+
+  const [userRating] = await connection.execute(`
+    SELECT rating, review
+    FROM job_ratings
+    WHERE job_id = ? AND user_id = ?
+  `, [jobId, req.user!.id]);
+
+  if ((userRating as any[]).length > 0) {
+    res.json((userRating as any[])[0]);
+  } else {
+    res.json({ rating: null, review: null });
+  }
 }));
 
 // Get applications for a job (coordinators and companies)
@@ -537,6 +615,18 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
 
   const connection = getConnection();
 
+  // Get job info to determine created_by_type
+  const [jobInfo] = await connection.execute(
+    'SELECT created_by_type, created_by_id FROM jobs WHERE id = ?',
+    [jobId]
+  );
+
+  if ((jobInfo as any[]).length === 0) {
+    return res.status(404).json({ message: 'Job not found' });
+  }
+
+  const job = (jobInfo as any[])[0];
+
   let query = `
     SELECT 
       ja.*,
@@ -545,22 +635,47 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
       ats.skill_match_score,
       ats.experience_match_score,
       ats.processing_status as ats_status,
-      COUNT(jac.id) as comment_count
+      COUNT(jac.id) as comment_count,
+      ar.rating as user_rating,
+      ar.comment as user_rating_comment,
+      -- Complete user rating profile across all applications
+      user_stats.overall_average_rating,
+      user_stats.total_ratings,
+      user_stats.highest_rating,
+      user_stats.lowest_rating,
+      user_stats.company_ratings_count,
+      user_stats.coordinator_ratings_count
     FROM job_applications ja
     LEFT JOIN user_profiles up ON ja.user_id = up.user_id
     LEFT JOIN ats_resume_data ats ON ja.id = ats.application_id
     LEFT JOIN job_application_comments jac ON ja.id = jac.application_id
+    LEFT JOIN applicant_ratings ar ON ja.id = ar.application_id 
+      AND ar.rated_by_type = ? 
+      AND ar.rated_by_id = ?
+    LEFT JOIN (
+      SELECT 
+        ja_inner.user_id,
+        AVG(ar_inner.rating) as overall_average_rating,
+        COUNT(ar_inner.id) as total_ratings,
+        MAX(ar_inner.rating) as highest_rating,
+        MIN(ar_inner.rating) as lowest_rating,
+        COUNT(CASE WHEN ar_inner.rated_by_type = 'company' THEN 1 END) as company_ratings_count,
+        COUNT(CASE WHEN ar_inner.rated_by_type = 'coordinator' THEN 1 END) as coordinator_ratings_count
+      FROM job_applications ja_inner
+      LEFT JOIN applicant_ratings ar_inner ON ja_inner.id = ar_inner.application_id
+      GROUP BY ja_inner.user_id
+    ) user_stats ON ja.user_id = user_stats.user_id
     WHERE ja.job_id = ?
   `;
 
-  const queryParams: any[] = [jobId];
+  const queryParams: any[] = [job.created_by_type, req.user!.id, jobId];
 
   if (status) {
     query += ' AND ja.status = ?';
     queryParams.push(status);
   }
 
-  query += ' GROUP BY ja.id ORDER BY ja.created_at DESC';
+  query += ' GROUP BY ja.id ORDER BY user_stats.overall_average_rating DESC, ja.created_at DESC';
 
   // Add pagination
   const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -568,6 +683,20 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
   queryParams.push(parseInt(limit as string), offset);
 
   const [applications] = await connection.execute(query, queryParams);
+
+  // Process applications to convert profile_photo paths to URLs and add user rating profile
+  const processedApplications = (applications as any[]).map(app => ({
+    ...app,
+    profile_photo: UploadService.getPhotoUrl(app.profile_photo),
+    user_rating_profile: {
+      overall_average_rating: app.overall_average_rating,
+      total_ratings: app.total_ratings || 0,
+      highest_rating: app.highest_rating,
+      lowest_rating: app.lowest_rating,
+      company_ratings_count: app.company_ratings_count || 0,
+      coordinator_ratings_count: app.coordinator_ratings_count || 0
+    }
+  }));
 
   // Get total count
   let countQuery = 'SELECT COUNT(*) as total FROM job_applications WHERE job_id = ?';
@@ -582,7 +711,9 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
   const total = (countResult as any[])[0].total;
 
   res.json({
-    applications,
+    applications: processedApplications,
+    job_created_by_type: job.created_by_type,
+    job_created_by_id: job.created_by_id,
     pagination: {
       page: parseInt(page as string),
       limit: parseInt(limit as string),
@@ -702,7 +833,10 @@ router.post('/:id/applications/filter', authenticate, authorize('coordinator', '
     }
 
     if (meetsStandards) {
-      filteredApplications.push(app);
+      filteredApplications.push({
+        ...app,
+        profile_photo: UploadService.getPhotoUrl(app.profile_photo)
+      });
     }
   }
 
@@ -759,16 +893,45 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
   const connection = getConnection();
 
   // Get application details
-  const [applications] = await connection.execute(
-    'SELECT * FROM job_applications WHERE id = ?',
-    [applicationId]
-  );
+  const [applications] = await connection.execute(`
+    SELECT ja.*, up.profile_photo
+    FROM job_applications ja
+    LEFT JOIN user_profiles up ON ja.user_id = up.user_id
+    WHERE ja.id = ?
+  `, [applicationId]);
 
   if ((applications as any[]).length === 0) {
     return res.status(404).json({ message: 'Application not found' });
   }
 
   const application = (applications as any[])[0];
+
+  // Get the current user's rating
+  let userRating = null;
+  let userRatingComment = null;
+  if (req.user!.role === 'company') {
+    const [companyRating] = await connection.execute(`
+      SELECT rating, comment
+      FROM applicant_ratings
+      WHERE application_id = ? AND rated_by_type = 'company' AND rated_by_id = ?
+    `, [applicationId, req.user!.id]);
+
+    if ((companyRating as any[]).length > 0) {
+      userRating = (companyRating as any[])[0].rating;
+      userRatingComment = (companyRating as any[])[0].comment;
+    }
+  } else if (req.user!.role === 'coordinator') {
+    const [coordinatorRating] = await connection.execute(`
+      SELECT rating, comment
+      FROM applicant_ratings
+      WHERE application_id = ? AND rated_by_type = 'coordinator' AND rated_by_id = ?
+    `, [applicationId, req.user!.id]);
+
+    if ((coordinatorRating as any[]).length > 0) {
+      userRating = (coordinatorRating as any[])[0].rating;
+      userRatingComment = (coordinatorRating as any[])[0].comment;
+    }
+  }
 
   // Get screening question answers
   const [answers] = await connection.execute(`
@@ -783,9 +946,83 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
     ORDER BY jsq.order_index
   `, [applicationId]);
 
+  // Get ALL ratings for this USER across all their applications (complete profile)
+  const [ratings] = await connection.execute(`
+    SELECT 
+      ar.id,
+      ar.rating,
+      ar.comment,
+      ar.created_at,
+      ar.rated_by_type,
+      ar.rated_by_id,
+      j.title as job_title,
+      CASE 
+        WHEN ar.rated_by_type = 'coordinator' THEN 
+          CONCAT(cp.first_name, ' ', cp.last_name)
+        WHEN ar.rated_by_type = 'company' THEN 
+          comp_p.company_name
+      END as rater_name,
+      CASE 
+        WHEN ar.rated_by_type = 'coordinator' THEN cp.profile_photo
+        WHEN ar.rated_by_type = 'company' THEN comp_p.profile_photo
+      END as rater_photo
+    FROM applicant_ratings ar
+    LEFT JOIN job_applications ja ON ar.application_id = ja.id
+    LEFT JOIN jobs j ON ja.job_id = j.id
+    LEFT JOIN coordinator_profiles cp ON ar.rated_by_type = 'coordinator' AND ar.rated_by_id = cp.coordinator_id
+    LEFT JOIN company_profiles comp_p ON ar.rated_by_type = 'company' AND ar.rated_by_id = comp_p.company_id
+    WHERE ja.user_id = ?
+    ORDER BY ar.rating DESC, ar.created_at DESC
+  `, [application.user_id]);
+
+  // Calculate the user's overall rating statistics
+  const [userRatingStats] = await connection.execute(`
+    SELECT 
+      AVG(ar.rating) as overall_average_rating,
+      COUNT(ar.id) as total_ratings,
+      MAX(ar.rating) as highest_rating,
+      MIN(ar.rating) as lowest_rating,
+      COUNT(CASE WHEN ar.rated_by_type = 'company' THEN 1 END) as company_ratings_count,
+      COUNT(CASE WHEN ar.rated_by_type = 'coordinator' THEN 1 END) as coordinator_ratings_count
+    FROM applicant_ratings ar
+    LEFT JOIN job_applications ja ON ar.application_id = ja.id
+    WHERE ja.user_id = ?
+  `, [application.user_id]);
+
+  const userStats = (userRatingStats as any[])[0] || {
+    overall_average_rating: null,
+    total_ratings: 0,
+    highest_rating: null,
+    lowest_rating: null,
+    company_ratings_count: 0,
+    coordinator_ratings_count: 0
+  };
+
+  // Process ratings to include photo URLs
+  const processedRatings = (ratings as any[]).map(rating => ({
+    ...rating,
+    rater_photo: UploadService.getPhotoUrl(rating.rater_photo)
+  }));
+
   res.json({
     ...application,
-    screening_answers: answers
+    profile_photo: UploadService.getPhotoUrl(application.profile_photo),
+    screening_answers: answers,
+    all_ratings: processedRatings,
+    // Add user's own rating for companies and coordinators (for this specific application)
+    company_rating: req.user!.role === 'company' ? userRating : null,
+    company_rating_comment: req.user!.role === 'company' ? userRatingComment : null,
+    user_rating: req.user!.role === 'coordinator' ? userRating : null,
+    user_rating_comment: req.user!.role === 'coordinator' ? userRatingComment : null,
+    // Add complete user rating profile from all applications
+    user_rating_profile: {
+      overall_average_rating: userStats.overall_average_rating,
+      total_ratings: userStats.total_ratings,
+      highest_rating: userStats.highest_rating,
+      lowest_rating: userStats.lowest_rating,
+      company_ratings_count: userStats.company_ratings_count,
+      coordinator_ratings_count: userStats.coordinator_ratings_count
+    }
   });
 }));
 
@@ -833,6 +1070,7 @@ router.put('/:id', authenticate, authorize('coordinator', 'company'), asyncHandl
     applicationDeadline,
     positionsAvailable,
     experienceLevel,
+    targetStudentType,
     coordinatorName,
     businessOwnerName,
     screeningQuestions,
@@ -869,14 +1107,14 @@ router.put('/:id', authenticate, authorize('coordinator', 'company'), asyncHandl
         title = ?, location = ?, category = ?, work_type = ?, work_arrangement = ?, 
         currency = ?, min_salary = ?, max_salary = ?, description = ?, summary = ?, 
         video_url = ?, company_name = ?, application_deadline = ?, positions_available = ?, 
-        experience_level = ?, coordinator_name = ?, business_owner_name = ?, status = ?,
+        experience_level = ?, target_student_type = ?, coordinator_name = ?, business_owner_name = ?, status = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
       title, location, category, workType || 'internship', workArrangement || 'on-site',
       currency || 'PHP', minSalary || null, maxSalary || null, description, summary || null,
       videoUrl || null, companyName || null, applicationDeadline || null, positionsAvailable || 1,
-      experienceLevel || 'entry-level', coordinatorName || null, businessOwnerName || null,
+      experienceLevel || 'entry-level', targetStudentType || 'both', coordinatorName || null, businessOwnerName || null,
       status || 'active', id
     ]);
 
@@ -949,6 +1187,54 @@ router.delete('/:id', authenticate, authorize('coordinator', 'company'), asyncHa
     await connection.rollback();
     throw error;
   }
+}));
+
+// Rate Applicant (for coordinators)
+router.post('/applications/:applicationId/rate', authenticate, authorize('coordinator'), asyncHandler(async (req: AuthRequest, res) => {
+  const { applicationId } = req.params;
+  const { rating, comment } = req.body;
+  const connection = getConnection();
+
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+  }
+
+  // Verify application belongs to coordinator's job
+  const [applicationCheck] = await connection.execute(`
+    SELECT ja.id FROM job_applications ja
+    JOIN jobs j ON ja.job_id = j.id
+    WHERE ja.id = ? AND j.created_by_type = 'coordinator' AND j.created_by_id = ?
+  `, [applicationId, req.user!.id]);
+
+  if ((applicationCheck as any[]).length === 0) {
+    return res.status(403).json({ message: 'Access denied' });
+  }
+
+  // Insert or update rating
+  await connection.execute(`
+    INSERT INTO applicant_ratings (application_id, rated_by_type, rated_by_id, rating, comment)
+    VALUES (?, 'coordinator', ?, ?, ?)
+    ON DUPLICATE KEY UPDATE rating = VALUES(rating), comment = VALUES(comment), updated_at = NOW()
+  `, [applicationId, req.user!.id, rating, comment || null]);
+
+  // Update average rating in job_applications
+  const [ratingStats] = await connection.execute(`
+    SELECT AVG(rating) as avg_rating, COUNT(*) as count
+    FROM applicant_ratings
+    WHERE application_id = ?
+  `, [applicationId]);
+
+  const stats = (ratingStats as any[])[0];
+  await connection.execute(
+    'UPDATE job_applications SET average_rating = ?, rating_count = ? WHERE id = ?',
+    [stats.avg_rating, stats.count, applicationId]
+  );
+
+  res.json({ 
+    message: 'Rating submitted successfully',
+    average_rating: stats.avg_rating,
+    rating_count: stats.count
+  });
 }));
 
 export default router;

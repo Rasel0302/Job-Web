@@ -65,6 +65,7 @@ export const ProfilePhotoUpload: React.FC<ProfilePhotoUploadProps> = ({
   
   const imgRef = useRef<HTMLImageElement>(null);
   const hiddenAnchorRef = useRef<HTMLAnchorElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const aspect = 1; // Square aspect ratio
 
   const onSelectFile = useCallback((files: File[]) => {
@@ -94,12 +95,27 @@ export const ProfilePhotoUpload: React.FC<ProfilePhotoUploadProps> = ({
     }
   }, []);
 
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      onSelectFile(Array.from(files));
+    }
+  }, [onSelectFile]);
+
+  const handleUploadClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: onSelectFile,
     accept: {
-      'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp']
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/gif': ['.gif'],
+      'image/webp': ['.webp']
     },
-    multiple: false
+    multiple: false,
+    noClick: true // Disable dropzone click, we handle it manually
   });
 
   function onImageLoad(e: React.SyntheticEvent<HTMLImageElement>) {
@@ -224,8 +240,22 @@ export const ProfilePhotoUpload: React.FC<ProfilePhotoUploadProps> = ({
 
           {/* Upload Area */}
           <div className="flex-1">
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+              onChange={handleFileInputChange}
+              style={{ display: 'none' }}
+            />
+            
+            {/* Visible upload area with drag & drop */}
             <div
               {...getRootProps()}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleUploadClick();
+              }}
               className={`
                 border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors
                 ${isDragActive
@@ -234,7 +264,7 @@ export const ProfilePhotoUpload: React.FC<ProfilePhotoUploadProps> = ({
                 }
               `}
             >
-              <input {...getInputProps()} />
+              <input {...getInputProps()} style={{ display: 'none' }} />
               <PhotoIcon className="w-6 h-6 text-gray-400 mx-auto mb-2" />
               <p className="text-sm text-gray-600">
                 {isDragActive ? 'Drop the image here' : 'Drag & drop or click to select'}

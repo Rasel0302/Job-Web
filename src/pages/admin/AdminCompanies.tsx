@@ -6,7 +6,8 @@ import {
   EnvelopeIcon,
   CalendarIcon,
   CheckCircleIcon,
-  XCircleIcon
+  XCircleIcon,
+  UserCircleIcon
 } from '@heroicons/react/24/outline';
 import { api } from '../../services/api';
 
@@ -17,6 +18,7 @@ interface Company {
   created_at: string;
   company_name?: string;
   business_summary?: string;
+  profile_photo?: string;
   role: string;
 }
 
@@ -166,7 +168,23 @@ export const AdminCompanies: React.FC = () => {
                 >
                   <div className="flex items-center space-x-4">
                     <div className="flex-shrink-0">
-                      <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                      {company.profile_photo ? (
+                        <img
+                          src={company.profile_photo}
+                          alt={company.company_name || 'Company'}
+                          className="h-12 w-12 rounded-full object-cover border-2 border-green-200"
+                          onError={(e) => {
+                            // Hide the image and show fallback icon if image fails to load
+                            e.currentTarget.style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <div 
+                        className="h-12 w-12 rounded-full bg-green-100 flex items-center justify-center"
+                        style={{ display: company.profile_photo ? 'none' : 'flex' }}
+                      >
                         <BuildingOfficeIcon className="h-6 w-6 text-green-600" />
                       </div>
                     </div>

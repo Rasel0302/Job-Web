@@ -140,12 +140,11 @@ export const CreateJob: React.FC = () => {
     videoUrl: '',
     
     // Additional Settings
-    companyName: '',
     applicationDeadline: '',
     positionsAvailable: '1',
     experienceLevel: 'entry-level',
+    targetStudentType: 'both', // 'graduated', 'ojt', 'both'
     coordinatorName: '',
-    businessOwnerName: '',
     filterPreScreening: false
   });
   
@@ -306,7 +305,7 @@ export const CreateJob: React.FC = () => {
             <p className="text-sm text-gray-600 mt-1">Optional information about who is posting this job</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Coordinator Name (Optional)
@@ -317,19 +316,6 @@ export const CreateJob: React.FC = () => {
                 onChange={(e) => handleInputChange('coordinatorName', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 placeholder="Enter coordinator name"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Business Owner Name (Optional)
-              </label>
-              <input
-                type="text"
-                value={formData.businessOwnerName}
-                onChange={(e) => handleInputChange('businessOwnerName', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                placeholder="Enter business owner name"
               />
             </div>
           </div>
@@ -578,23 +564,7 @@ export const CreateJob: React.FC = () => {
             <p className="text-sm text-gray-600 mt-1">Configure posting preferences and deadlines</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Company Name (Optional)
-              </label>
-              <input
-                type="text"
-                value={formData.companyName}
-                onChange={(e) => handleInputChange('companyName', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                placeholder="Enter the hiring company name"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Leave blank if posting as yourself or for direct hire
-              </p>
-            </div>
-
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Application Deadline
@@ -620,6 +590,24 @@ export const CreateJob: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
               />
               <p className="text-xs text-gray-500 mt-1">Number of openings for this position</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Target Student Type
+              </label>
+              <select
+                value={formData.targetStudentType}
+                onChange={(e) => handleInputChange('targetStudentType', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              >
+                <option value="both">Both OJT & Graduated</option>
+                <option value="ojt">OJT Students Only</option>
+                <option value="graduated">Graduated Students Only</option>
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Who can apply for this position</p>
             </div>
           </div>
 
@@ -1046,14 +1034,13 @@ export const CreateJob: React.FC = () => {
                       <li>Experience Level: {formData.experienceLevel || 'Entry Level'}</li>
                       <li>Positions Available: {formData.positionsAvailable || '1'} position{formData.positionsAvailable !== '1' ? 's' : ''}</li>
                       {formData.applicationDeadline && <li>Deadline: {new Date(formData.applicationDeadline).toLocaleDateString()}</li>}
+                      <li>Target Students: {formData.targetStudentType === 'both' ? 'OJT & Graduated' : formData.targetStudentType === 'ojt' ? 'OJT Students Only' : 'Graduated Students Only'}</li>
                     </ul>
                   </div>
                   <div>
                     <h3 className="font-medium text-gray-900 mb-2">Posted By</h3>
                     <ul className="space-y-1 text-sm text-gray-600">
                       {formData.coordinatorName && <li>Coordinator: {formData.coordinatorName}</li>}
-                      {formData.businessOwnerName && <li>Business Owner: {formData.businessOwnerName}</li>}
-                      {formData.companyName && <li>Company: {formData.companyName}</li>}
                     </ul>
                   </div>
                 </div>

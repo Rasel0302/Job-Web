@@ -24,7 +24,7 @@ export const CoordinatorPendingApproval: React.FC = () => {
   useEffect(() => {
     const fetchProfileStatus = async () => {
       try {
-        const response = await api.get('/coordinator/profile');
+        const response = await api.get('/coordinators/profile');
         setProfileData(response.data);
       } catch (error) {
         console.error('Failed to fetch profile status:', error);

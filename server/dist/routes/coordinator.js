@@ -1,5 +1,4 @@
 import express from 'express';
-import crypto from 'crypto';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authenticateForProfileCompletion, authorize } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
@@ -96,18 +95,13 @@ router.post('/invite-company', authenticate, authorize('coordinator'), asyncHand
         return res.status(400).json({ message: 'Email and message are required' });
     }
     const connection = getConnection();
-    // Check if there's already a pending invitation for this email from this coordinator
-    const [existingInvitations] = await connection.execute('SELECT id FROM company_invitations WHERE coordinator_id = ? AND company_email = ? AND status = "pending" AND expires_at > NOW()', [req.user.id, email]);
-    if (existingInvitations.length > 0) {
-        return res.status(400).json({ message: 'An active invitation for this email already exists' });
-    }
     // Check if this email is already registered as a company
     const [existingCompanies] = await connection.execute('SELECT id FROM companies WHERE email = ?', [email]);
     if (existingCompanies.length > 0) {
         return res.status(400).json({ message: 'This email is already registered as a company' });
     }
-    // Generate unique invitation token
-    const token = crypto.randomBytes(32).toString('hex');
+    // Generate unique 8-digit invitation code
+    const token = Math.floor(10000000 + Math.random() * 90000000).toString();
     // Set expiration to 7 days from now
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);

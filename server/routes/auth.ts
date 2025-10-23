@@ -142,7 +142,7 @@ router.post('/register/company', asyncHandler(async (req, res) => {
   const { email, password, invitationToken } = req.body;
 
   if (!email || !password || !invitationToken) {
-    return res.status(400).json({ message: 'Email, password, and invitation token are required' });
+    return res.status(400).json({ message: 'Email, password, and invitation code are required' });
   }
 
   if (!validateEmail(email)) {
@@ -169,7 +169,7 @@ router.post('/register/company', asyncHandler(async (req, res) => {
   `, [invitationToken]);
 
   if ((invitations as any[]).length === 0) {
-    return res.status(400).json({ message: 'Invalid or expired invitation token' });
+    return res.status(400).json({ message: 'Invalid or expired invitation code' });
   }
 
   const invitation = (invitations as any[])[0];
@@ -201,10 +201,10 @@ router.post('/register/company', asyncHandler(async (req, res) => {
     [email, otp, 'registration', otpExpires]
   );
 
-  // Create company
+  // Create company with coordinator affiliation (auto-approved since they have invitation)
   const [result] = await connection.execute(
-    'INSERT INTO companies (email, password_hash, verification_token) VALUES (?, ?, ?)',
-    [email, hashedPassword, verificationToken]
+    'INSERT INTO companies (email, password_hash, verification_token, invited_by_coordinator_id, is_approved) VALUES (?, ?, ?, ?, TRUE)',
+    [email, hashedPassword, verificationToken, invitation.coordinator_id]
   );
 
   const companyId = (result as any).insertId;
@@ -215,11 +215,17 @@ router.post('/register/company', asyncHandler(async (req, res) => {
     [companyId, invitation.id]
   );
 
+  // Create coordinator affiliation record
+  await connection.execute(
+    'INSERT INTO company_coordinator_affiliations (company_id, coordinator_id, invitation_id) VALUES (?, ?, ?)',
+    [companyId, invitation.coordinator_id, invitation.id]
+  );
+
   // Send OTP email
   await emailService.sendOTP(email, otp, 'company registration');
 
   res.status(201).json({
-    message: 'Company registered successfully. Please verify your email and wait for approval.',
+    message: 'Company registered successfully. Please verify your email to continue.',
     companyId: companyId
   });
 }));
@@ -405,11 +411,12 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
 
     console.log(`User verified successfully in ${userTable} table for ${userRole}`);
 
-    // Get user details for response
-    const [userDetails] = await connection.execute(
-      `SELECT id, email FROM ${userTable} WHERE email = ?`,
-      [email]
-    );
+    // Get user details for response (include is_approved for non-user roles)
+    const selectQuery = userRole === 'user' 
+      ? `SELECT id, email FROM ${userTable} WHERE email = ?`
+      : `SELECT id, email, is_approved FROM ${userTable} WHERE email = ?`;
+    
+    const [userDetails] = await connection.execute(selectQuery, [email]);
 
     const user = (userDetails as any[])[0];
     user.role = userRole;
@@ -450,6 +457,20 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
           email: user.email,
           role: user.role,
           isVerified: true
+        },
+        requiresProfileCompletion: true,
+        nextStep: 'complete-profile'
+      });
+    } else if (userRole === 'company') {
+      return res.json({
+        message: '✅ Email verified! Please complete your company/business profile to continue.',
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+          isVerified: true,
+          isApproved: user.is_approved ?? true // Companies are auto-approved
         },
         requiresProfileCompletion: true,
         nextStep: 'complete-profile'

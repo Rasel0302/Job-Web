@@ -80,7 +80,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         { name: 'Dashboard', href: '/dashboard', icon: Cog6ToothIcon },
         { 
           name: 'Profile', 
-          href: user.role === 'coordinator' ? '/coordinator/profile' : '/profile', 
+          href: user.role === 'coordinator' 
+            ? '/coordinator/profile' 
+            : user.role === 'company'
+            ? '/company/profile'
+            : '/profile', 
           icon: UserIcon 
         },
       ]
