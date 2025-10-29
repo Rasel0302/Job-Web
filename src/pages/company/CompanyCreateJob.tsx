@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import { toast } from 'react-hot-toast';
+import { formatNumberWithCommas, handleCommaFormattedInput, removeCommasFromNumber } from '../../utils/formatUtils';
 import {
   BriefcaseIcon,
-  CurrencyDollarIcon,
-  DocumentTextIcon,
   Cog6ToothIcon,
   PlusIcon,
   TrashIcon
@@ -114,7 +113,7 @@ const PREDEFINED_QUESTIONS: { [key: string]: ScreeningQuestion } = {
 };
 
 export const CompanyCreateJob: React.FC = () => {
-  const { user } = useAuth();
+  const {} = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [jobCategories, setJobCategories] = useState<JobCategory[]>([]);
@@ -143,6 +142,7 @@ export const CompanyCreateJob: React.FC = () => {
     applicationDeadline: '',
     targetStudentType: 'both', // 'graduated', 'ojt', 'both'
     positionsAvailable: '1',
+    applicationLimit: '',
     experienceLevel: 'entry-level',
     coordinatorName: '',
     businessOwnerName: '',
@@ -214,11 +214,17 @@ export const CompanyCreateJob: React.FC = () => {
       ...customQuestions.filter(q => q.questionText.trim() !== '')
     ];
 
+    // Parse salary values, removing commas first
+    const parsedMinSalary = formData.minSalary ? parseFloat(removeCommasFromNumber(formData.minSalary)) : null;
+    const parsedMaxSalary = formData.maxSalary ? parseFloat(removeCommasFromNumber(formData.maxSalary)) : null;
+    const parsedApplicationLimit = formData.applicationLimit ? parseInt(removeCommasFromNumber(formData.applicationLimit)) : null;
+
     return {
       ...formData,
-      minSalary: formData.minSalary && !isNaN(parseFloat(formData.minSalary)) ? parseFloat(formData.minSalary) : null,
-      maxSalary: formData.maxSalary && !isNaN(parseFloat(formData.maxSalary)) ? parseFloat(formData.maxSalary) : null,
-      positionsAvailable: parseInt(formData.positionsAvailable) || 1, // Convert string to number
+      minSalary: parsedMinSalary && !isNaN(parsedMinSalary) ? parsedMinSalary : null,
+      maxSalary: parsedMaxSalary && !isNaN(parsedMaxSalary) ? parsedMaxSalary : null,
+      positionsAvailable: parseInt(formData.positionsAvailable) || 1,
+      applicationLimit: parsedApplicationLimit && !isNaN(parsedApplicationLimit) ? parsedApplicationLimit : null,
       screeningQuestions,
       status: 'active' // This will post the job live
     };
@@ -227,7 +233,7 @@ export const CompanyCreateJob: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.title || !formData.location || !formData.category || !formData.description) {
+    if (!formData.title || !formData.location || !formData.category || !formData.description || !formData.applicationLimit) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -236,7 +242,7 @@ export const CompanyCreateJob: React.FC = () => {
 
     try {
       const jobData = createJobData();
-      const response = await api.post('/jobs', jobData);
+      await api.post('/jobs', jobData);
       toast.success('Job posted successfully! It will be reviewed by your coordinator.');
       navigate('/company/jobs');
     } catch (error: any) {
@@ -267,7 +273,7 @@ export const CompanyCreateJob: React.FC = () => {
         status: 'draft' // Save as draft
       };
       
-      const response = await api.post('/jobs', jobData);
+      await api.post('/jobs', jobData);
       toast.success('Job saved as draft successfully!');
       navigate('/company/dashboard');
     } catch (error: any) {
@@ -463,22 +469,22 @@ export const CompanyCreateJob: React.FC = () => {
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Minimum Salary</label>
               <input
-                type="number"
+                type="text"
                 value={formData.minSalary}
-                onChange={(e) => handleInputChange('minSalary', e.target.value)}
+                onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleInputChange('minSalary', value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                placeholder="Enter minimum salary"
+                placeholder="Enter minimum salary (e.g., 15,000)"
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Maximum Salary</label>
               <input
-                type="number"
+                type="text"
                 value={formData.maxSalary}
-                onChange={(e) => handleInputChange('maxSalary', e.target.value)}
+                onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleInputChange('maxSalary', value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                placeholder="Enter maximum salary"
+                placeholder="Enter maximum salary (e.g., 25,000)"
               />
             </div>
           </div>
@@ -582,6 +588,25 @@ export const CompanyCreateJob: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
+                Application Limit
+                <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                min="1"
+                value={formData.applicationLimit}
+                onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleInputChange('applicationLimit', value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                placeholder="Enter maximum applications (e.g., 50)"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Maximum number of applications allowed for this job posting.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Target Student Type
               </label>
               <select
@@ -664,14 +689,9 @@ export const CompanyCreateJob: React.FC = () => {
                     <div className="ml-3 flex-1">
                       <label htmlFor={key} className="text-sm font-medium text-gray-900 cursor-pointer">
                         {question.questionText}
-                        {question.questionType === 'salary_range' && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                            Popular
-                          </span>
-                        )}
-                        {question.questionType === 'qualifications' && (
-                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                            Popular
+                        {!question.isRequired && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                            Optional
                           </span>
                         )}
                       </label>
@@ -686,21 +706,25 @@ export const CompanyCreateJob: React.FC = () => {
                                 <div>
                                   <label className="text-xs text-gray-700 mb-1 block">Minimum Salary (PHP)</label>
                                   <input
-                                    type="number"
-                                    min="0"
-                                    step="1000"
+                                    type="text"
+                                    onChange={(e) => {
+                                      const formatted = formatNumberWithCommas(e.target.value);
+                                      e.target.value = formatted;
+                                    }}
                                     className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                    placeholder="e.g., 15000"
+                                    placeholder="e.g., 15,000"
                                   />
                                 </div>
                                 <div>
                                   <label className="text-xs text-gray-700 mb-1 block">Maximum Salary (PHP)</label>
                                   <input
-                                    type="number"
-                                    min="0"
-                                    step="1000"
+                                    type="text"
+                                    onChange={(e) => {
+                                      const formatted = formatNumberWithCommas(e.target.value);
+                                      e.target.value = formatted;
+                                    }}
                                     className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                    placeholder="e.g., 25000"
+                                    placeholder="e.g., 25,000"
                                   />
                                 </div>
                               </div>
@@ -709,7 +733,7 @@ export const CompanyCreateJob: React.FC = () => {
                                   type="checkbox"
                                   className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                 />
-                                <span className="ml-2 text-xs text-gray-700">This is a <strong>must-have</strong> requirement</span>
+                                <span className="ml-2 text-xs text-gray-700">This is a <strong>must answer</strong> question</span>
                               </div>
                             </div>
                           ) : question.options ? (
@@ -734,7 +758,7 @@ export const CompanyCreateJob: React.FC = () => {
                                   type="checkbox"
                                   className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                 />
-                                <span className="ml-2 text-xs text-gray-700">This is a <strong>must-have</strong> requirement</span>
+                                <span className="ml-2 text-xs text-gray-700">This is a <strong>must answer</strong> question</span>
                               </div>
                             </div>
                           ) : (
@@ -973,11 +997,11 @@ export const CompanyCreateJob: React.FC = () => {
                       )}
                     </div>
 
-                    {/* Apply Button */}
+                    {/* Preview Note */}
                     <div className="ml-6">
-                      <button className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
-                        Apply Now
-                      </button>
+                      <div className="bg-gray-100 text-gray-500 px-6 py-3 rounded-lg font-medium cursor-not-allowed">
+                        Apply Button (Preview)
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1020,6 +1044,7 @@ export const CompanyCreateJob: React.FC = () => {
                     <ul className="space-y-1 text-sm text-gray-600">
                       <li>Experience Level: {formData.experienceLevel || 'Entry Level'}</li>
                       <li>Positions Available: {formData.positionsAvailable || '1'} position{formData.positionsAvailable !== '1' ? 's' : ''}</li>
+                      {formData.applicationLimit && <li>Application Limit: {formData.applicationLimit} application{formData.applicationLimit !== '1' ? 's' : ''}</li>}
                       {formData.applicationDeadline && <li>Deadline: {new Date(formData.applicationDeadline).toLocaleDateString()}</li>}
                       <li>Target Students: {formData.targetStudentType === 'both' ? 'OJT & Graduated' : formData.targetStudentType === 'ojt' ? 'OJT Students Only' : 'Graduated Students Only'}</li>
                     </ul>
@@ -1027,7 +1052,7 @@ export const CompanyCreateJob: React.FC = () => {
                   <div>
                     <h3 className="font-medium text-gray-900 mb-2">Posted By</h3>
                     <ul className="space-y-1 text-sm text-gray-600">
-                      {formData.coordinatorName && <li>Coordinator: {formData.coordinatorName}</li>}
+                      <li>Company: [Company Name from Profile]</li>
                       {formData.businessOwnerName && <li>Business Owner: {formData.businessOwnerName}</li>}
                     </ul>
                   </div>

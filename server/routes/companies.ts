@@ -222,6 +222,7 @@ router.post('/jobs', authenticate, authorize('company'), asyncHandler(async (req
     max_salary,
     application_deadline,
     positions_available,
+    application_limit,
     requirements,
     benefits,
     screening_questions,
@@ -240,9 +241,9 @@ router.post('/jobs', authenticate, authorize('company'), asyncHandler(async (req
       INSERT INTO jobs (
         title, description, category, work_type, work_arrangement, experience_level,
         location, currency, min_salary, max_salary, application_deadline, positions_available,
-        requirements, benefits, status, created_by_type, created_by_id, coordinator_name,
-        filter_pre_screening
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'company', ?, 
+        application_limit, requirements, benefits, status, created_by_type, created_by_id, 
+        coordinator_name, filter_pre_screening
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'company', ?, 
         (SELECT CONCAT(cp.first_name, ' ', cp.last_name) 
          FROM company_coordinator_affiliations cca 
          JOIN coordinator_profiles cp ON cca.coordinator_id = cp.coordinator_id 
@@ -250,8 +251,8 @@ router.post('/jobs', authenticate, authorize('company'), asyncHandler(async (req
     `, [
       title, description, category, work_type, work_arrangement, experience_level,
       location, currency, min_salary, max_salary, application_deadline, positions_available,
-      JSON.stringify(requirements), JSON.stringify(benefits), req.user!.id, req.user!.id,
-      filterPreScreening
+      application_limit || null, JSON.stringify(requirements), JSON.stringify(benefits), 
+      req.user!.id, req.user!.id, filterPreScreening
     ]);
 
     const jobId = (result as any).insertId;
@@ -320,7 +321,12 @@ router.get('/jobs/:jobId/applications', authenticate, authorize('company'), asyn
       user_stats.highest_rating,
       user_stats.lowest_rating,
       user_stats.company_ratings_count,
-      user_stats.coordinator_ratings_count
+      user_stats.coordinator_ratings_count,
+      -- Employment history with this company
+      employment_history.employment_count,
+      employment_history.last_hired_date,
+      employment_history.last_job_title,
+      employment_history.current_employment_status
     FROM job_applications ja
     JOIN jobs j ON ja.job_id = j.id
     LEFT JOIN user_profiles up ON ja.user_id = up.user_id
@@ -338,10 +344,21 @@ router.get('/jobs/:jobId/applications', authenticate, authorize('company'), asyn
       LEFT JOIN applicant_ratings ar_inner ON ja_inner.id = ar_inner.application_id
       GROUP BY ja_inner.user_id
     ) user_stats ON ja.user_id = user_stats.user_id
+    LEFT JOIN (
+      SELECT 
+        ues.user_id,
+        COUNT(*) as employment_count,
+        MAX(ues.hired_date) as last_hired_date,
+        MAX(ues.job_title) as last_job_title,
+        MAX(ues.employment_status) as current_employment_status
+      FROM user_employment_status ues
+      WHERE ues.employer_type = 'company' AND ues.employer_id = ?
+      GROUP BY ues.user_id
+    ) employment_history ON ja.user_id = employment_history.user_id
     WHERE ja.job_id = ?
   `;
 
-  const queryParams = [req.user!.id, jobId];
+  const queryParams = [req.user!.id, req.user!.id, jobId];
 
   if (status && status !== 'all') {
     query += ' AND ja.status = ?';
@@ -467,19 +484,29 @@ router.post('/applications/:applicationId/status-action', authenticate, authoriz
   const { action, reason } = req.body;
   const connection = getConnection();
 
-  if (!['accepted', 'rejected', 'on_hold'].includes(action)) {
-    return res.status(400).json({ message: 'Invalid action' });
+  if (!['on_hold'].includes(action)) {
+    return res.status(400).json({ message: 'Invalid action. Use accept/reject endpoints for final actions.' });
   }
 
-  // Verify application belongs to company's job
+  // Verify application belongs to company's job and check current status
   const [applicationCheck] = await connection.execute(`
-    SELECT ja.id, ja.first_name, ja.last_name, ja.email FROM job_applications ja
+    SELECT ja.id, ja.first_name, ja.last_name, ja.email, ja.status as current_status 
+    FROM job_applications ja
     JOIN jobs j ON ja.job_id = j.id
     WHERE ja.id = ? AND j.created_by_type = 'company' AND j.created_by_id = ?
   `, [applicationId, req.user!.id]);
 
   if ((applicationCheck as any[]).length === 0) {
     return res.status(403).json({ message: 'Access denied' });
+  }
+
+  const application = (applicationCheck as any[])[0];
+  
+  // Prevent status changes for final statuses
+  if (['accepted', 'rejected', 'hired'].includes(application.current_status)) {
+    return res.status(400).json({ 
+      message: 'Cannot change status: Application has been finalized with status ' + application.current_status 
+    });
   }
 
   try {
@@ -646,7 +673,12 @@ router.get('/applications', authenticate, authorize('company'), asyncHandler(asy
       user_stats.highest_rating,
       user_stats.lowest_rating,
       user_stats.company_ratings_count,
-      user_stats.coordinator_ratings_count
+      user_stats.coordinator_ratings_count,
+      -- Employment history with this company
+      employment_history.employment_count,
+      employment_history.last_hired_date,
+      employment_history.last_job_title,
+      employment_history.current_employment_status
     FROM job_applications ja
     JOIN jobs j ON ja.job_id = j.id
     LEFT JOIN user_profiles up ON ja.user_id = up.user_id
@@ -664,6 +696,17 @@ router.get('/applications', authenticate, authorize('company'), asyncHandler(asy
       LEFT JOIN applicant_ratings ar_inner ON ja_inner.id = ar_inner.application_id
       GROUP BY ja_inner.user_id
     ) user_stats ON ja.user_id = user_stats.user_id
+    LEFT JOIN (
+      SELECT 
+        ues.user_id,
+        COUNT(*) as employment_count,
+        MAX(ues.hired_date) as last_hired_date,
+        MAX(ues.job_title) as last_job_title,
+        MAX(ues.employment_status) as current_employment_status
+      FROM user_employment_status ues
+      WHERE ues.employer_type = 'company' AND ues.employer_id = ?
+      GROUP BY ues.user_id
+    ) employment_history ON ja.user_id = employment_history.user_id
     WHERE j.created_by_type = 'company' AND j.created_by_id = ?
     GROUP BY ja.id
     ORDER BY user_stats.overall_average_rating DESC, ja.created_at DESC
@@ -988,7 +1031,22 @@ router.delete('/jobs/:jobId', authenticate, authorize('company'), asyncHandler(a
   try {
     await connection.beginTransaction();
 
-    // Delete related records first (foreign key constraints)
+    // Archive ratings to preserve user rating history before deletion
+    await connection.execute(`
+      INSERT INTO user_rating_archive (
+        user_id, rated_by_type, rated_by_id, rating, comment, 
+        original_application_id, job_title, archived_date
+      )
+      SELECT 
+        ja.user_id, ar.rated_by_type, ar.rated_by_id, ar.rating, ar.comment,
+        ar.application_id, j.title, NOW()
+      FROM applicant_ratings ar
+      JOIN job_applications ja ON ar.application_id = ja.id
+      JOIN jobs j ON ja.job_id = j.id
+      WHERE ja.job_id = ?
+    `, [jobId]);
+
+    // Delete related records (foreign key constraints)
     await connection.execute('DELETE FROM job_ratings WHERE job_id = ?', [jobId]);
     await connection.execute('DELETE FROM job_screening_questions WHERE job_id = ?', [jobId]);
     await connection.execute('DELETE FROM job_application_comments WHERE application_id IN (SELECT id FROM job_applications WHERE job_id = ?)', [jobId]);
@@ -1053,46 +1111,20 @@ router.patch('/jobs/:jobId/renew', authenticate, authorize('company'), asyncHand
 }));
 
 // Accept or Decline Application
+// DEPRECATED: This endpoint is replaced by proper interview workflow
+// Companies should now use /jobs/applications/:id/accept and /jobs/applications/:id/reject
+// This endpoint is kept for backward compatibility but redirects to proper workflow
 router.post('/applications/:applicationId/decision', authenticate, authorize('company'), asyncHandler(async (req: AuthRequest, res) => {
   const { applicationId } = req.params;
   const { decision } = req.body; // 'accepted' or 'rejected'
-  const connection = getConnection();
 
-  if (!['accepted', 'rejected'].includes(decision)) {
-    return res.status(400).json({ message: 'Invalid decision. Must be "accepted" or "rejected"' });
-  }
-
-  // Verify application belongs to company's job
-  const [applicationCheck] = await connection.execute(`
-    SELECT ja.id, ja.user_id, ja.first_name, ja.last_name, ja.email, j.title as job_title
-    FROM job_applications ja
-    JOIN jobs j ON ja.job_id = j.id
-    WHERE ja.id = ? AND j.created_by_type = 'company' AND j.created_by_id = ?
-  `, [applicationId, req.user!.id]);
-
-  if ((applicationCheck as any[]).length === 0) {
-    return res.status(403).json({ message: 'Access denied' });
-  }
-
-  const application = (applicationCheck as any[])[0];
-
-  // Update application status
-  const newStatus = decision === 'accepted' ? 'hired' : 'rejected';
-  await connection.execute(
-    'UPDATE job_applications SET status = ?, updated_at = NOW() WHERE id = ?',
-    [newStatus, applicationId]
-  );
-
-  // Track action
-  await connection.execute(`
-    INSERT INTO company_application_actions (
-      application_id, company_id, action_type, action_data, created_by
-    ) VALUES (?, ?, ?, ?, ?)
-  `, [applicationId, req.user!.id, decision, JSON.stringify({ decision, timestamp: new Date() }), req.user!.id]);
-
-  res.json({ 
-    message: `Application ${decision} successfully`,
-    status: newStatus
+  // This endpoint is deprecated - companies should use the same workflow as coordinators
+  res.status(410).json({ 
+    message: 'This endpoint is deprecated. Please use the interview scheduling workflow instead.',
+    redirect: decision === 'accepted' 
+      ? `/jobs/applications/${applicationId}/accept` 
+      : `/jobs/applications/${applicationId}/reject`,
+    details: 'Companies now follow the same process as coordinators: Accept → Schedule Interview → Hire/Reject after interview'
   });
 }));
 

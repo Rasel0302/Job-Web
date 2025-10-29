@@ -13,7 +13,11 @@ import {
   BookOpenIcon,
   StarIcon,
   XMarkIcon,
-  EyeIcon
+  EyeIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  EnvelopeIcon,
+  PhoneIcon
 } from '@heroicons/react/24/outline';
 
 interface Coordinator {
@@ -24,6 +28,8 @@ interface Coordinator {
   profile_photo?: string;
   average_rating?: number;
   rating_count?: number;
+  contact_number?: string;
+  email?: string;
 }
 
 interface CompanyPartner {
@@ -56,21 +62,28 @@ export const Companies: React.FC = () => {
     averageRating?: number;
     ratingCount?: number;
   } | null>(null);
+  
+  // New modal states
+  const [showLearnMoreModal, setShowLearnMoreModal] = useState(false);
+  const [showContactModal, setShowContactModal] = useState(false);
+  const [expandedCoordinator, setExpandedCoordinator] = useState<number | null>(null);
 
   useEffect(() => {
+    // Only fetch on initial mount
     fetchCoordinators();
     fetchCompanies();
-  }, []);
+  }, []); // Empty dependency array - only run on mount
 
   const fetchCoordinators = async () => {
     try {
       setLoading(true);
       const response = await api.get('/users/coordinators/approved');
       setCoordinators(response.data);
+      setError(null); // Clear any previous errors
     } catch (err: any) {
       setError('Failed to load coordinators');
-      toast.error('Failed to load coordinators');
       console.error('Error fetching coordinators:', err);
+      toast.error('Failed to load coordinators');
     } finally {
       setLoading(false);
     }
@@ -81,9 +94,11 @@ export const Companies: React.FC = () => {
       setCompaniesLoading(true);
       const response = await api.get('/users/companies/approved');
       setCompanies(response.data);
+      setCompaniesError(null); // Clear any previous errors
     } catch (err: any) {
       setCompaniesError('Failed to load business partners');
       console.error('Error fetching companies:', err);
+      toast.error('Failed to load business partners');
     } finally {
       setCompaniesLoading(false);
     }
@@ -103,6 +118,10 @@ export const Companies: React.FC = () => {
   const closeRatingModal = () => {
     setShowRatingModal(false);
     setSelectedEntity(null);
+  };
+
+  const toggleCoordinatorExpansion = (coordinatorId: number) => {
+    setExpandedCoordinator(expandedCoordinator === coordinatorId ? null : coordinatorId);
   };
 
   return (
@@ -439,10 +458,16 @@ export const Companies: React.FC = () => {
           our coordinators are here to help make the perfect match.
         </p>
         <div className="space-x-4">
-          <button className="bg-white text-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors">
+          <button 
+            onClick={() => setShowContactModal(true)}
+            className="bg-white text-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors"
+          >
             Contact a Coordinator
           </button>
-          <button className="border-2 border-white text-white px-6 py-3 rounded-lg font-medium hover:bg-white hover:text-blue-600 transition-colors">
+          <button 
+            onClick={() => setShowLearnMoreModal(true)}
+            className="border-2 border-white text-white px-6 py-3 rounded-lg font-medium hover:bg-white hover:text-blue-600 transition-colors"
+          >
             Learn More
           </button>
         </div>
@@ -493,6 +518,284 @@ export const Companies: React.FC = () => {
               <div className="flex justify-end">
                 <button
                   onClick={closeRatingModal}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Learn More Modal */}
+      {showLearnMoreModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center space-x-3">
+                <UsersIcon className="h-6 w-6 text-blue-600" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">About Our Team</h3>
+                  <p className="text-sm text-gray-600">Who we are and how we help</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLearnMoreModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 space-y-6">
+              {/* Who Section */}
+              <div className="bg-blue-50 rounded-lg p-6">
+                <div className="flex items-center mb-4">
+                  <AcademicCapIcon className="h-6 w-6 text-blue-600 mr-2" />
+                  <h4 className="text-xl font-semibold text-gray-900">Who We Are</h4>
+                </div>
+                <p className="text-gray-700 leading-relaxed">
+                  Our team consists of dedicated <strong>Course Coordinators</strong> from various academic programs 
+                  and trusted <strong>Business Partners</strong> including companies and business owners. 
+                  The coordinators are experienced faculty members who specialize in connecting students 
+                  with real-world opportunities in their respective fields.
+                </p>
+              </div>
+
+              {/* What Section */}
+              <div className="bg-green-50 rounded-lg p-6">
+                <div className="flex items-center mb-4">
+                  <BuildingOfficeIcon className="h-6 w-6 text-green-600 mr-2" />
+                  <h4 className="text-xl font-semibold text-gray-900">What We Do</h4>
+                </div>
+                <div className="space-y-3 text-gray-700">
+                  <p><strong>Course Coordinators:</strong></p>
+                  <ul className="list-disc list-inside ml-4 space-y-1">
+                    <li>Guide students through their OJT journey</li>
+                    <li>Match students with suitable internship opportunities</li>
+                    <li>Provide mentorship and career guidance</li>
+                    <li>Oversee academic requirements and assessments</li>
+                    <li>Post job opportunities for their own businesses and ventures</li>
+                  </ul>
+                  <p><strong>Business Partners:</strong></p>
+                  <ul className="list-disc list-inside ml-4 space-y-1">
+                    <li>Offer valuable internship and job opportunities</li>
+                    <li>Provide real-world work experience</li>
+                    <li>Contribute to student skill development</li>
+                    <li>Bridge the gap between academia and industry</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* How Section */}
+              <div className="bg-purple-50 rounded-lg p-6">
+                <div className="flex items-center mb-4">
+                  <StarIcon className="h-6 w-6 text-purple-600 mr-2" />
+                  <h4 className="text-xl font-semibold text-gray-900">How We Help</h4>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4 text-gray-700">
+                  <div>
+                    <h5 className="font-semibold mb-2">For Students:</h5>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      <li>Personalized career guidance</li>
+                      <li>Industry connections and networking</li>
+                      <li>Skill assessment and development</li>
+                      <li>Job placement assistance</li>
+                      <li>Professional development support</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h5 className="font-semibold mb-2">For Companies:</h5>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      <li>Access to talented students</li>
+                      <li>Streamlined recruitment process</li>
+                      <li>Academic partnership opportunities</li>
+                      <li>Fresh perspectives and innovation</li>
+                      <li>Future talent pipeline development</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Statistics */}
+              <div className="bg-gray-50 rounded-lg p-6">
+                <h4 className="text-xl font-semibold text-gray-900 mb-4">Our Impact</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">{coordinators.length}</div>
+                    <div className="text-sm text-gray-600">Active Coordinators</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">{companies.length}</div>
+                    <div className="text-sm text-gray-600">Business Partners</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">500+</div>
+                    <div className="text-sm text-gray-600">Students Placed</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 rounded-b-lg">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowLearnMoreModal(false)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Coordinator Modal */}
+      {showContactModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center p-4">
+          <div className="relative bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-lg">
+              <div className="flex items-center space-x-3">
+                <AcademicCapIcon className="h-6 w-6 text-blue-600" />
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Contact Our Coordinators</h3>
+                  <p className="text-sm text-gray-600">Reach out to our course coordinators for guidance</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowContactModal(false)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <XMarkIcon className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {coordinators.length === 0 ? (
+                <div className="text-center py-8">
+                  <AcademicCapIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">No coordinators available at this time.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {coordinators.map((coordinator) => (
+                    <div key={coordinator.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                      {/* Coordinator Header */}
+                      <div 
+                        className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors"
+                        onClick={() => toggleCoordinatorExpansion(coordinator.id)}
+                      >
+                        <div className="flex items-center space-x-4">
+                          {/* Profile Photo */}
+                          <div className="flex-shrink-0">
+                            {coordinator.profile_photo ? (
+                              <img
+                                src={coordinator.profile_photo}
+                                alt={`${coordinator.first_name} ${coordinator.last_name}`}
+                                className="w-12 h-12 rounded-full object-cover ring-2 ring-blue-100"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
+                                <UserCircleIcon className="h-8 w-8 text-blue-600" />
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Coordinator Info */}
+                          <div>
+                            <h4 className="text-lg font-medium text-gray-900">
+                              {coordinator.first_name} {coordinator.last_name}
+                            </h4>
+                            <div className="flex items-center space-x-2 text-sm text-gray-600">
+                              <BookOpenIcon className="h-4 w-4" />
+                              <span>{coordinator.designated_course}</span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Expand/Collapse Icon */}
+                        <div className="flex-shrink-0">
+                          {expandedCoordinator === coordinator.id ? (
+                            <ChevronUpIcon className="h-5 w-5 text-gray-500" />
+                          ) : (
+                            <ChevronDownIcon className="h-5 w-5 text-gray-500" />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Coordinator Contact Details (Expandable) */}
+                      {expandedCoordinator === coordinator.id && (
+                        <div className="p-4 bg-white border-t border-gray-200">
+                          <div className="space-y-4">
+                            {/* Contact Information */}
+                            <div>
+                              <h5 className="text-sm font-medium text-gray-900 mb-3">Contact Information</h5>
+                              <div className="space-y-2">
+                                {coordinator.email ? (
+                                  <div className="flex items-center space-x-3">
+                                    <EnvelopeIcon className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                                    <span className="text-gray-700 text-sm">
+                                      {coordinator.email}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center space-x-3">
+                                    <EnvelopeIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                    <span className="text-gray-500 text-sm">Email not available</span>
+                                  </div>
+                                )}
+                                
+                                {coordinator.contact_number ? (
+                                  <div className="flex items-center space-x-3">
+                                    <PhoneIcon className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                                    <span className="text-gray-700 text-sm">
+                                      {coordinator.contact_number}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center space-x-3">
+                                    <PhoneIcon className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                                    <span className="text-gray-500 text-sm">Phone not available</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Rating */}
+                            {coordinator.average_rating && coordinator.average_rating > 0 && (
+                              <div>
+                                <h5 className="text-sm font-medium text-gray-900 mb-2">Rating</h5>
+                                <RatingDisplay
+                                  entityId={coordinator.id}
+                                  entityType="coordinator"
+                                  averageRating={coordinator.average_rating}
+                                  totalCount={coordinator.rating_count}
+                                  showDetails={false}
+                                />
+                              </div>
+                            )}
+
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 rounded-b-lg">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowContactModal(false)}
                   className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
                 >
                   Close

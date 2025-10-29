@@ -259,9 +259,9 @@ export const CoordinatorProfile: React.FC = () => {
               </h2>
               <div className="flex items-start space-x-6">
                 <div className="flex-shrink-0">
-                  {profileData.profile_photo ? (
+                  {profileData.profile_photo_url ? (
                     <img
-                      src={profileData.profile_photo}
+                      src={profileData.profile_photo_url}
                       alt="Profile"
                       className="h-24 w-24 rounded-full object-cover ring-4 ring-blue-100"
                     />
@@ -273,7 +273,7 @@ export const CoordinatorProfile: React.FC = () => {
                 </div>
                 <div className="flex-1">
                   <ProfilePhotoUpload
-                    currentPhotoUrl={profileData.profile_photo || null}
+                    currentPhotoUrl={profileData.profile_photo_url || null}
                     onPhotoUpdate={handlePhotoUpdate}
                     onUpload={handlePhotoUpload}
                     className="mb-0"

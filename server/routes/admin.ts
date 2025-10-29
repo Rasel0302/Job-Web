@@ -2,7 +2,7 @@ import express from 'express';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authenticateForProfileCompletion, authorize, AuthRequest } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
-import { emailService } from '../services/emailService.js';
+import { EmailService } from '../services/emailService.js';
 import { UploadService } from '../services/uploadService.js';
 
 const router = express.Router();
@@ -124,11 +124,11 @@ router.post('/approve/:type/:id', authenticate, authorize('admin'), asyncHandler
 
   // Send approval email notification
   try {
-    await emailService.sendApprovalEmail(userEmail, type, true);
+    await EmailService.sendApprovalEmail(userEmail, type, true);
     
     // For admins, also send welcome email after approval
     if (type === 'admin') {
-      await emailService.sendWelcomeEmail(userEmail, userEmail.split('@')[0], 'admin');
+      await EmailService.sendWelcomeEmail(userEmail, userEmail.split('@')[0], 'admin');
     }
   } catch (emailError) {
     console.warn('Failed to send approval/welcome email:', emailError);
@@ -166,7 +166,7 @@ router.post('/reject/:type/:id', authenticate, authorize('admin'), asyncHandler(
 
   // Send rejection email notification before deleting
   try {
-    await emailService.sendApprovalEmail(userEmail, type, false, reason);
+    await EmailService.sendApprovalEmail(userEmail, type, false, reason);
   } catch (emailError) {
     console.warn('Failed to send rejection email:', emailError);
     // Don't fail the rejection if email sending fails

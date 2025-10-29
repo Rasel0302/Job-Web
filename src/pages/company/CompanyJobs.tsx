@@ -206,12 +206,16 @@ export const CompanyJobs: React.FC = () => {
   };
 
   const formatSalaryRange = (job: Job) => {
-    if (job.min_salary && job.max_salary) {
-      return `${job.currency || 'PHP'} ${job.min_salary.toLocaleString()} - ${job.max_salary.toLocaleString()}`;
-    } else if (job.min_salary) {
-      return `${job.currency || 'PHP'} ${job.min_salary.toLocaleString()}+`;
-    } else if (job.max_salary) {
-      return `Up to ${job.currency || 'PHP'} ${job.max_salary.toLocaleString()}`;
+    // Ensure values are numbers before formatting
+    const minSalary = Number(job.min_salary);
+    const maxSalary = Number(job.max_salary);
+    
+    if (minSalary && maxSalary) {
+      return `${job.currency || 'PHP'} ${minSalary.toLocaleString()} - ${maxSalary.toLocaleString()}`;
+    } else if (minSalary) {
+      return `${job.currency || 'PHP'} ${minSalary.toLocaleString()}+`;
+    } else if (maxSalary) {
+      return `Up to ${job.currency || 'PHP'} ${maxSalary.toLocaleString()}`;
     }
     return 'Negotiable';
   };
@@ -476,9 +480,21 @@ export const CompanyJobs: React.FC = () => {
                     </p>
 
                     <div className="flex items-center space-x-4 text-sm">
-                      <div className="flex items-center text-blue-600">
+                      <div className={`flex items-center ${
+                        safeJob.application_limit && safeJob.application_count >= safeJob.application_limit 
+                          ? 'text-red-600' 
+                          : safeJob.application_limit && safeJob.application_count >= safeJob.application_limit * 0.8 
+                            ? 'text-amber-600' 
+                            : 'text-blue-600'
+                      }`}>
                         <UserGroupIcon className="h-4 w-4 mr-1" />
-                        {safeJob.application_count} applications
+                        {safeJob.application_limit 
+                          ? `${safeJob.application_count}/${safeJob.application_limit} applications`
+                          : `${safeJob.application_count} applications`
+                        }
+                        {safeJob.application_limit && safeJob.application_count >= safeJob.application_limit && (
+                          <span className="ml-1 text-xs text-red-500 font-medium">FULL</span>
+                        )}
                       </div>
                       {safeJob.qualified_count > 0 && (
                         <div className="flex items-center text-green-600">
@@ -495,6 +511,23 @@ export const CompanyJobs: React.FC = () => {
                       <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                         <p className="text-sm text-yellow-800">
                           <strong>Coordinator Notes:</strong> {safeJob.coordinator_notes}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Application Limit Warning */}
+                    {safeJob.application_limit && safeJob.application_count >= safeJob.application_limit && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-md">
+                        <p className="text-sm text-red-800">
+                          <strong>⚠️ Application Limit Reached:</strong> This job has reached its maximum of {safeJob.application_limit} applications. No new applications will be accepted.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {safeJob.application_limit && safeJob.application_count >= safeJob.application_limit * 0.8 && safeJob.application_count < safeJob.application_limit && (
+                      <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                        <p className="text-sm text-amber-800">
+                          <strong>📝 Application Limit Warning:</strong> This job is nearing its limit ({safeJob.application_count}/{safeJob.application_limit} applications received).
                         </p>
                       </div>
                     )}

@@ -7,10 +7,8 @@ import {
   BuildingOfficeIcon,
   UserGroupIcon,
   BriefcaseIcon,
-  DocumentTextIcon,
   EnvelopeIcon,
   PhoneIcon,
-  MapPinIcon,
   PlusIcon,
   EyeIcon,
   ClockIcon,
@@ -49,7 +47,7 @@ interface DashboardStats {
 }
 
 export const CompanyDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const {} = useAuth();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<CompanyProfile | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);

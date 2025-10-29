@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import { toast } from 'react-hot-toast';
+import { formatNumberWithCommas, handleCommaFormattedInput, removeCommasFromNumber } from '../../utils/formatUtils';
 import {
   BriefcaseIcon,
   CurrencyDollarIcon,
@@ -12,7 +13,9 @@ import {
   TrashIcon,
   ArrowLeftIcon,
   EyeIcon,
-  XCircleIcon
+  XCircleIcon,
+  BuildingOfficeIcon,
+  UserIcon
 } from '@heroicons/react/24/outline';
 
 interface JobCategory {
@@ -41,6 +44,9 @@ export const CoordinatorEditJob: React.FC = () => {
   const [showPreview, setShowPreview] = useState(false);
 
   const [formData, setFormData] = useState({
+    // Business Type Selection
+    businessType: 'my_business', // 'my_business' or 'other_business'
+    
     title: '',
     location: '',
     category: '',
@@ -52,11 +58,16 @@ export const CoordinatorEditJob: React.FC = () => {
     description: '',
     summary: '',
     videoUrl: '',
+    
+    // Company Information (for other business)
+    companyName: '',
+    businessOwnerName: '',
+    
     applicationDeadline: '',
     positionsAvailable: '1',
+    applicationLimit: '',
     experienceLevel: 'entry-level',
     targetStudentType: 'both',
-    coordinatorName: '',
     status: 'active',
     filterPreScreening: false
   });
@@ -180,23 +191,34 @@ export const CoordinatorEditJob: React.FC = () => {
         return;
       }
 
+      // Determine business type based on existing data
+      const businessType = job.company_name || job.business_owner_name ? 'other_business' : 'my_business';
+      
       setFormData({
+        // Business Type Selection
+        businessType: businessType,
+        
         title: job.title || '',
         location: job.location || '',
         category: job.category || '',
         workType: job.work_type || 'internship',
         workArrangement: job.work_arrangement || 'on-site',
         currency: job.currency || 'PHP',
-        minSalary: job.min_salary ? job.min_salary.toString() : '',
-        maxSalary: job.max_salary ? job.max_salary.toString() : '',
+        minSalary: job.min_salary ? formatNumberWithCommas(job.min_salary.toString()) : '',
+        maxSalary: job.max_salary ? formatNumberWithCommas(job.max_salary.toString()) : '',
         description: job.description || '',
         summary: job.summary || '',
         videoUrl: job.video_url || '',
+        
+        // Company Information (for other business)
+        companyName: job.company_name || '',
+        businessOwnerName: job.business_owner_name || '',
+        
         applicationDeadline: job.application_deadline || '',
         positionsAvailable: job.positions_available ? job.positions_available.toString() : '1',
+        applicationLimit: job.application_limit ? formatNumberWithCommas(job.application_limit.toString()) : '',
         experienceLevel: job.experience_level || 'entry-level',
         targetStudentType: job.target_student_type || 'both',
-        coordinatorName: job.coordinator_name || '',
         status: job.status || 'active',
         filterPreScreening: job.filter_pre_screening || false
       });
@@ -277,9 +299,17 @@ export const CoordinatorEditJob: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.title || !formData.location || !formData.category || !formData.description) {
+    if (!formData.title || !formData.location || !formData.category || !formData.description || !formData.applicationLimit) {
       toast.error('Please fill in all required fields');
       return;
+    }
+
+    // Validate business type specific requirements
+    if (formData.businessType === 'other_business') {
+      if (!formData.companyName || !formData.businessOwnerName) {
+        toast.error('Company name and business owner name are required when posting for other business');
+        return;
+      }
     }
 
     setSaving(true);
@@ -295,11 +325,21 @@ export const CoordinatorEditJob: React.FC = () => {
         ...customQuestions.filter(q => q.questionText.trim() !== '')
       ];
 
+      // Parse salary values, removing commas first
+      const parsedMinSalary = formData.minSalary ? parseFloat(removeCommasFromNumber(formData.minSalary)) : null;
+      const parsedMaxSalary = formData.maxSalary ? parseFloat(removeCommasFromNumber(formData.maxSalary)) : null;
+      const parsedApplicationLimit = formData.applicationLimit ? parseInt(removeCommasFromNumber(formData.applicationLimit)) : null;
+
       const jobData = {
         ...formData,
-        minSalary: formData.minSalary && !isNaN(parseFloat(formData.minSalary)) ? parseFloat(formData.minSalary) : null,
-        maxSalary: formData.maxSalary && !isNaN(parseFloat(formData.maxSalary)) ? parseFloat(formData.maxSalary) : null,
+        minSalary: parsedMinSalary && !isNaN(parsedMinSalary) ? parsedMinSalary : null,
+        maxSalary: parsedMaxSalary && !isNaN(parsedMaxSalary) ? parsedMaxSalary : null,
         positionsAvailable: parseInt(formData.positionsAvailable) || 1,
+        applicationLimit: parsedApplicationLimit && !isNaN(parsedApplicationLimit) ? parsedApplicationLimit : null,
+        // Set coordinator name automatically based on user info for my_business, or use provided names for other_business
+        coordinatorName: formData.businessType === 'my_business' ? `${user?.firstName || ''} ${user?.lastName || ''}`.trim() : null,
+        companyName: formData.businessType === 'other_business' ? formData.companyName : null,
+        businessOwnerName: formData.businessType === 'other_business' ? formData.businessOwnerName : null,
         screeningQuestions: allScreeningQuestions
       };
 
@@ -360,6 +400,93 @@ export const CoordinatorEditJob: React.FC = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-8">
+          {/* Business Type Selection */}
+          <div className="bg-white shadow rounded-lg p-6">
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                <BriefcaseIcon className="h-6 w-6 mr-2 text-blue-600" />
+                Job Posting Type
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">Are you posting this job for your organization or another business?</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div className="flex space-x-4">
+                <label className="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 flex-1">
+                  <input
+                    type="radio"
+                    name="businessType"
+                    value="my_business"
+                    checked={formData.businessType === 'my_business'}
+                    onChange={handleInputChange}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                  />
+                  <div className="ml-3">
+                    <div className="flex items-center">
+                      <UserIcon className="h-5 w-5 text-blue-600 mr-2" />
+                      <span className="text-sm font-medium text-gray-900">For My Organization</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Posting for my coordinator organization</p>
+                  </div>
+                </label>
+
+                <label className="flex items-center p-4 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 flex-1">
+                  <input
+                    type="radio"
+                    name="businessType"
+                    value="other_business"
+                    checked={formData.businessType === 'other_business'}
+                    onChange={handleInputChange}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                  />
+                  <div className="ml-3">
+                    <div className="flex items-center">
+                      <BuildingOfficeIcon className="h-5 w-5 text-blue-600 mr-2" />
+                      <span className="text-sm font-medium text-gray-900">For Other Business</span>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">Posting on behalf of a company/business</p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Conditional Company/Business Owner Fields */}
+              {formData.businessType === 'other_business' && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Company Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="companyName"
+                        value={formData.companyName}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter company name"
+                        required={formData.businessType === 'other_business'}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Business Owner Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="businessOwnerName"
+                        value={formData.businessOwnerName}
+                        onChange={handleInputChange}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter business owner name"
+                        required={formData.businessType === 'other_business'}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Basic Information */}
           <div className="bg-white shadow rounded-lg p-6">
             <div className="flex items-center mb-4">
@@ -488,6 +615,26 @@ export const CoordinatorEditJob: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Application Limit
+                  <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  name="applicationLimit"
+                  value={formData.applicationLimit}
+                  onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleInputChange({ target: { name: 'applicationLimit', value } }))}
+                  min="1"
+                  placeholder="Enter maximum applications (e.g., 50)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Maximum number of applications allowed for this job posting.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Target Student Type
                 </label>
                 <select
@@ -546,12 +693,12 @@ export const CoordinatorEditJob: React.FC = () => {
                   Minimum Salary
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   name="minSalary"
                   value={formData.minSalary}
-                  onChange={handleInputChange}
+                  onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleInputChange({ target: { name: 'minSalary', value } }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="15000"
+                  placeholder="Enter minimum salary (e.g., 15,000)"
                 />
               </div>
 
@@ -560,12 +707,12 @@ export const CoordinatorEditJob: React.FC = () => {
                   Maximum Salary
                 </label>
                 <input
-                  type="number"
+                  type="text"
                   name="maxSalary"
                   value={formData.maxSalary}
-                  onChange={handleInputChange}
+                  onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleInputChange({ target: { name: 'maxSalary', value } }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="25000"
+                  placeholder="Enter maximum salary (e.g., 25,000)"
                 />
               </div>
             </div>
@@ -674,33 +821,28 @@ export const CoordinatorEditJob: React.FC = () => {
                 {Object.entries(PREDEFINED_QUESTIONS).map(([key, question]) => (
                   <div key={key} className="border border-blue-200 rounded-lg p-4 bg-blue-50">
                     <div className="flex items-start">
-                      <input
-                        type="checkbox"
+                    <input
+                      type="checkbox"
                         id={key}
-                        checked={selectedQuestions.includes(key)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedQuestions(prev => [...prev, key]);
-                          } else {
-                            setSelectedQuestions(prev => prev.filter(q => q !== key));
-                          }
-                        }}
+                      checked={selectedQuestions.includes(key)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedQuestions(prev => [...prev, key]);
+                        } else {
+                          setSelectedQuestions(prev => prev.filter(q => q !== key));
+                        }
+                      }}
                         className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                       />
                       <div className="ml-3 flex-1">
                         <label htmlFor={key} className="text-sm font-medium text-gray-900 cursor-pointer">
                           {question.questionText}
-                          {question.questionType === 'salary_range' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                              Popular
-                            </span>
-                          )}
-                          {question.questionType === 'qualifications' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                              Popular
-                            </span>
-                          )}
-                        </label>
+                        {!question.isRequired && (
+                          <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                            Optional
+                          </span>
+                        )}
+                  </label>
                         {selectedQuestions.includes(key) && (
                           <div className="mt-2">
                             {question.questionType === 'salary_range' ? (
@@ -712,30 +854,39 @@ export const CoordinatorEditJob: React.FC = () => {
                                   <div>
                                     <label className="text-xs text-gray-700 mb-1 block">Minimum Salary (PHP)</label>
                                     <input
-                                      type="number"
-                                      min="0"
-                                      step="1000"
+                                      type="text"
+                                      onChange={(e) => {
+                                        const formatted = formatNumberWithCommas(e.target.value);
+                                        e.target.value = formatted;
+                                      }}
                                       className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                      placeholder="e.g., 15000"
+                                      placeholder="e.g., 15,000"
                                     />
                                   </div>
                                   <div>
                                     <label className="text-xs text-gray-700 mb-1 block">Maximum Salary (PHP)</label>
                                     <input
-                                      type="number"
-                                      min="0"
-                                      step="1000"
+                                      type="text"
+                                      onChange={(e) => {
+                                        const formatted = formatNumberWithCommas(e.target.value);
+                                        e.target.value = formatted;
+                                      }}
                                       className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                      placeholder="e.g., 25000"
+                                      placeholder="e.g., 25,000"
                                     />
                                   </div>
                                 </div>
                                 <div className="mt-2 flex items-center">
                                   <input
                                     type="checkbox"
+                                    checked={question.isRequired}
+                                    onChange={(e) => {
+                                      const updatedQuestion = { ...PREDEFINED_QUESTIONS[key], isRequired: e.target.checked };
+                                      PREDEFINED_QUESTIONS[key] = updatedQuestion;
+                                    }}
                                     className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                   />
-                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must-have</strong> requirement</span>
+                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must answer</strong> question</span>
                                 </div>
                               </div>
                             ) : question.options ? (
@@ -760,7 +911,7 @@ export const CoordinatorEditJob: React.FC = () => {
                                     type="checkbox"
                                     className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                   />
-                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must-have</strong> requirement</span>
+                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must answer</strong> question</span>
                                 </div>
                               </div>
                             ) : (
@@ -790,31 +941,31 @@ export const CoordinatorEditJob: React.FC = () => {
                     <div key={`existing-${index}`} className="border border-gray-200 rounded-lg p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <input
-                            type="text"
-                            value={question.questionText}
-                            onChange={(e) => {
-                              const newQuestions = [...existingQuestions];
-                              newQuestions[index] = { ...question, questionText: e.target.value };
-                              setExistingQuestions(newQuestions);
-                            }}
+                      <input
+                        type="text"
+                        value={question.questionText}
+                        onChange={(e) => {
+                          const newQuestions = [...existingQuestions];
+                          newQuestions[index] = { ...question, questionText: e.target.value };
+                          setExistingQuestions(newQuestions);
+                        }}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Enter your custom question"
-                          />
+                      />
                           <div className="mt-2 flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={question.isRequired}
-                              onChange={(e) => {
-                                const newQuestions = [...existingQuestions];
-                                newQuestions[index] = { ...question, isRequired: e.target.checked };
-                                setExistingQuestions(newQuestions);
-                              }}
+                        <input
+                          type="checkbox"
+                          checked={question.isRequired}
+                          onChange={(e) => {
+                            const newQuestions = [...existingQuestions];
+                            newQuestions[index] = { ...question, isRequired: e.target.checked };
+                            setExistingQuestions(newQuestions);
+                          }}
                               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                            />
+                        />
                             <span className="ml-2 text-sm text-gray-700">Required question</span>
-                          </div>
-                        </div>
+                    </div>
+                </div>
                         <button
                           type="button"
                           onClick={() => setExistingQuestions(prev => prev.filter((_, i) => i !== index))}
@@ -829,18 +980,18 @@ export const CoordinatorEditJob: React.FC = () => {
                     <div key={`new-${index}`} className="border border-gray-200 rounded-lg p-4">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <input
-                            type="text"
-                            value={question.questionText}
-                            onChange={(e) => updateCustomQuestion(index, 'questionText', e.target.value)}
+                      <input
+                        type="text"
+                        value={question.questionText}
+                        onChange={(e) => updateCustomQuestion(index, 'questionText', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Enter your custom question"
-                          />
+                      />
                           <div className="mt-2 flex items-center">
-                            <input
-                              type="checkbox"
-                              checked={question.isRequired}
-                              onChange={(e) => updateCustomQuestion(index, 'isRequired', e.target.checked)}
+                        <input
+                          type="checkbox"
+                          checked={question.isRequired}
+                          onChange={(e) => updateCustomQuestion(index, 'isRequired', e.target.checked)}
                               className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                             />
                             <span className="ml-2 text-sm text-gray-700">Required question</span>
@@ -994,7 +1145,7 @@ export const CoordinatorEditJob: React.FC = () => {
                         
                         {/* Salary Range */}
                         {(formData.minSalary || formData.maxSalary) && (
-                          <div className="mb-4">
+                <div className="mb-4">
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
                               💰 {formData.currency || 'PHP'} {formData.minSalary && formData.maxSalary 
                                 ? `${formData.minSalary} - ${formData.maxSalary}`
@@ -1003,24 +1154,24 @@ export const CoordinatorEditJob: React.FC = () => {
                                   : `Up to ${formData.maxSalary}`
                               }
                             </span>
-                          </div>
+                </div>
                         )}
 
                         {/* Category */}
                         {formData.category && (
-                          <div className="mb-4">
+                    <div className="mb-4">
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
                               📂 {formData.category}
                             </span>
-                          </div>
-                        )}
+                    </div>
+                  )}
                       </div>
 
-                      {/* Apply Button */}
+                      {/* Preview Note */}
                       <div className="ml-6">
-                        <button className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
-                          Apply Now
-                        </button>
+                        <div className="bg-gray-100 text-gray-500 px-6 py-3 rounded-lg font-medium cursor-not-allowed">
+                          Apply Button (Preview)
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1057,20 +1208,28 @@ export const CoordinatorEditJob: React.FC = () => {
 
                   {/* Job Details */}
                   <div className="grid grid-cols-2 gap-6 mb-6">
-                    <div>
+                  <div>
                       <h3 className="font-medium text-gray-900 mb-2">Job Details</h3>
                       <ul className="space-y-1 text-sm text-gray-600">
                         <li>Experience Level: {formData.experienceLevel || 'Entry Level'}</li>
                         <li>Positions Available: {formData.positionsAvailable || '1'} position{formData.positionsAvailable !== '1' ? 's' : ''}</li>
+                        {formData.applicationLimit && <li>Application Limit: {formData.applicationLimit} application{formData.applicationLimit !== '1' ? 's' : ''}</li>}
                         {formData.applicationDeadline && <li>Deadline: {new Date(formData.applicationDeadline).toLocaleDateString()}</li>}
                         <li>Target Students: {formData.targetStudentType === 'both' ? 'OJT & Graduated' : formData.targetStudentType === 'ojt' ? 'OJT Students Only' : 'Graduated Students Only'}</li>
                         <li>Status: {formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}</li>
                       </ul>
-                    </div>
+                  </div>
                     <div>
                       <h3 className="font-medium text-gray-900 mb-2">Posted By</h3>
                       <ul className="space-y-1 text-sm text-gray-600">
-                        {formData.coordinatorName && <li>Coordinator: {formData.coordinatorName}</li>}
+                        {formData.businessType === 'my_business' ? (
+                          <li>Coordinator: {user?.firstName} {user?.lastName}</li>
+                        ) : (
+                          <>
+                            {formData.companyName && <li>Company: {formData.companyName}</li>}
+                            {formData.businessOwnerName && <li>Business Owner: {formData.businessOwnerName}</li>}
+                          </>
+                        )}
                       </ul>
                     </div>
                   </div>

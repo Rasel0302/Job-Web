@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { api } from '../services/api';
@@ -11,7 +11,9 @@ import {
   BuildingOfficeIcon,
   AcademicCapIcon,
   UserGroupIcon,
-  StarIcon
+  StarIcon,
+  ChevronDownIcon,
+  ChevronUpIcon
 } from '@heroicons/react/24/outline';
 import { RatingDisplay } from '../components/RatingDisplay';
 
@@ -49,6 +51,7 @@ export const Jobs: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [recommendationsExpanded, setRecommendationsExpanded] = useState(true);
   const [filters, setFilters] = useState({
     category: '',
     workType: '',
@@ -56,14 +59,8 @@ export const Jobs: React.FC = () => {
     search: ''
   });
 
-  useEffect(() => {
-    fetchJobs();
-    if (user?.role === 'user') {
-      fetchRecommendations();
-    }
-  }, [filters, user]);
-
-  const fetchRecommendations = async () => {
+  // Define functions first before useEffects
+  const fetchRecommendations = useCallback(async () => {
     try {
       setRecommendationsLoading(true);
       const response = await api.get('/jobs/recommendations');
@@ -74,11 +71,12 @@ export const Jobs: React.FC = () => {
     } finally {
       setRecommendationsLoading(false);
     }
-  };
+  }, []);
 
-  const fetchJobs = async () => {
+  const fetchJobs = useCallback(async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = new URLSearchParams();
       
       if (filters.category) params.append('category', filters.category);
@@ -90,31 +88,76 @@ export const Jobs: React.FC = () => {
       setJobs(response.data.jobs || []);
     } catch (err: any) {
       setError('Failed to load jobs');
-      toast.error('Failed to load jobs');
       console.error('Error fetching jobs:', err);
+      // Only show toast for user-initiated actions
+      if (!filters.category && !filters.workType && !filters.location && !filters.search) {
+        toast.error('Failed to load jobs');
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters]);
 
-  const handleFilterChange = (field: string, value: string) => {
+  // Initial load - no debounce needed
+  useEffect(() => {
+    // Initial fetch on mount - create a separate function to avoid dependency issues
+    const initialFetch = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await api.get('/jobs');
+        setJobs(response.data.jobs || []);
+      } catch (err: any) {
+        setError('Failed to load jobs');
+        toast.error('Failed to load jobs');
+        console.error('Error fetching jobs:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    initialFetch();
+  }, []); // Only run on mount
+
+  useEffect(() => {
+    if (user?.role === 'user' && recommendedJobs.length === 0) {
+      fetchRecommendations();
+    }
+  }, [user?.role, fetchRecommendations, recommendedJobs.length]); // Only fetch when user role changes, not when user object changes
+
+  // Debounce filter changes to prevent too many API calls
+  const handleFilterChange = useCallback((field: string, value: string) => {
     setFilters(prev => ({
       ...prev,
       [field]: value
     }));
-  };
+  }, []);
+
+  // Debounced effect for filters to prevent rapid API calls
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      fetchJobs();
+    }, 300); // 300ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [filters, fetchJobs]);
 
   const formatSalary = (job: Job) => {
     if (!job.min_salary && !job.max_salary) return 'Salary not specified';
     
     const currency = job.currency || 'PHP';
-    if (job.min_salary && job.max_salary) {
-      return `${currency} ${job.min_salary?.toLocaleString()} - ${job.max_salary?.toLocaleString()}`;
-    } else if (job.min_salary) {
-      return `${currency} ${job.min_salary?.toLocaleString()}+`;
-    } else {
-      return `Up to ${currency} ${job.max_salary?.toLocaleString()}`;
+    // Ensure values are numbers before formatting
+    const minSalary = Number(job.min_salary);
+    const maxSalary = Number(job.max_salary);
+    
+    if (minSalary && maxSalary) {
+      return `${currency} ${minSalary.toLocaleString()} - ${maxSalary.toLocaleString()}`;
+    } else if (minSalary) {
+      return `${currency} ${minSalary.toLocaleString()}+`;
+    } else if (maxSalary) {
+      return `Up to ${currency} ${maxSalary.toLocaleString()}`;
     }
+    return 'Salary not specified';
   };
 
   const getTimeAgo = (dateString: string) => {
@@ -156,98 +199,148 @@ export const Jobs: React.FC = () => {
         <div className="mb-8">
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
             <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-                  <StarIcon className="h-5 w-5 text-yellow-500 mr-2" />
-                  Recommended for You
-                </h2>
-                <p className="text-sm text-gray-600 mt-1">
-                  Jobs that match your skills, courses, and experience
-                </p>
-              </div>
-              {!recommendationsLoading && recommendedJobs.length > 0 && (
-                <button 
-                  onClick={fetchRecommendations}
-                  className="text-sm text-blue-600 hover:text-blue-800"
+              <div className="flex items-center">
+                <button
+                  onClick={() => setRecommendationsExpanded(!recommendationsExpanded)}
+                  className="flex items-center hover:bg-blue-100 rounded-lg px-2 py-1 transition-colors"
                 >
-                  Refresh Recommendations
+                  <h2 className="text-xl font-semibold text-gray-900 flex items-center mr-2">
+                    <StarIcon className="h-5 w-5 text-yellow-500 mr-2" />
+                    Recommended for You
+                  </h2>
+                  {recommendationsExpanded ? (
+                    <ChevronUpIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+                  ) : (
+                    <ChevronDownIcon className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+                  )}
                 </button>
-              )}
+                {!recommendationsExpanded && recommendedJobs.length > 0 && (
+                  <span className="ml-3 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-medium">
+                    {recommendedJobs.length} job{recommendedJobs.length !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center space-x-3">
+                {recommendationsExpanded && (
+                  <p className="text-sm text-gray-600">
+                    Jobs that match your skills, courses, and experience
+                  </p>
+                )}
+                {recommendedJobs.length > 0 && recommendationsExpanded && (
+                  <button 
+                    onClick={() => {
+                      if (!recommendationsLoading) {
+                        fetchRecommendations();
+                      }
+                    }}
+                    disabled={recommendationsLoading}
+                    className="text-sm text-blue-600 hover:text-blue-800 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {recommendationsLoading ? 'Refreshing...' : 'Refresh Recommendations'}
+                  </button>
+                )}
+              </div>
             </div>
 
-            {recommendationsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
-                <span className="ml-3 text-sm text-gray-600">Finding your perfect matches...</span>
-              </div>
-            ) : recommendedJobs.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {recommendedJobs.slice(0, 4).map((job) => (
-                  <div key={job.id} className="bg-white rounded-lg border border-blue-200 p-4 hover:shadow-md transition-shadow">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
-                        <p className="text-sm text-gray-600">{job.created_by_name} • {job.location}</p>
-                      </div>
-                      <div className="ml-3">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          {job.matchScore}% Match
-                        </span>
-                      </div>
+            {recommendationsExpanded && (
+              <div className="transition-all duration-300 ease-in-out">
+                {recommendationsLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                    <span className="ml-3 text-sm text-gray-600">Finding your perfect matches...</span>
+                  </div>
+                ) : recommendedJobs.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      {recommendedJobs.slice(0, 4).map((job) => (
+                        <div key={job.id} className="bg-white rounded-lg border border-blue-200 p-4 hover:shadow-md transition-shadow">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="font-medium text-gray-900 mb-1">{job.title}</h3>
+                              <p className="text-sm text-gray-600">{job.created_by_name} • {job.location}</p>
+                            </div>
+                            <div className="ml-3">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {job.matchScore}% Match
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {job.matchReasons && job.matchReasons.length > 0 && (
+                            <div className="mb-3">
+                              <p className="text-xs text-blue-600 font-medium mb-1">Why this matches you:</p>
+                              <ul className="text-xs text-gray-600 space-y-1">
+                                {job.matchReasons.slice(0, 2).map((reason, index) => (
+                                  <li key={index} className="flex items-start">
+                                    <span className="text-blue-500 mr-1">•</span>
+                                    {reason}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          <div className="flex space-x-2">
+                            <Link
+                              to={`/jobs/${job.id}`}
+                              className="flex-1 text-center px-3 py-2 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50 transition-colors"
+                            >
+                              View Details
+                            </Link>
+                            {user?.role === 'user' && (
+                              <Link
+                                to={`/jobs/${job.id}/apply`}
+                                className="flex-1 text-center px-3 py-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                              >
+                                Apply Now
+                              </Link>
+                            )}
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    
-                    {job.matchReasons && job.matchReasons.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-blue-600 font-medium mb-1">Why this matches you:</p>
-                        <ul className="text-xs text-gray-600 space-y-1">
-                          {job.matchReasons.slice(0, 2).map((reason, index) => (
-                            <li key={index} className="flex items-start">
-                              <span className="text-blue-500 mr-1">•</span>
-                              {reason}
-                            </li>
-                          ))}
-                        </ul>
+                    {recommendedJobs.length > 4 && (
+                      <div className="text-center">
+                        <p className="text-sm text-gray-600">
+                          Showing 4 of {recommendedJobs.length} recommendations.{' '}
+                          <button 
+                            onClick={() => {
+                              if (!recommendationsLoading) {
+                                fetchRecommendations();
+                              }
+                            }}
+                            disabled={recommendationsLoading}
+                            className="text-blue-600 hover:text-blue-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {recommendationsLoading ? 'Refreshing...' : 'Refresh for more'}
+                          </button>
+                        </p>
                       </div>
                     )}
-
-                    <div className="flex space-x-2">
+                  </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <StarIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                    <h3 className="text-sm font-medium text-gray-900 mb-1">No Personalized Recommendations Yet</h3>
+                    <p className="text-xs text-gray-600 mb-4">
+                      Complete your profile and build your resume to get job recommendations tailored just for you!
+                    </p>
+                    <div className="space-x-2">
                       <Link
-                        to={`/jobs/${job.id}`}
-                        className="flex-1 text-center px-3 py-2 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50 transition-colors"
+                        to="/complete-profile"
+                        className="inline-block px-3 py-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
                       >
-                        View Details
+                        Complete Profile
                       </Link>
                       <Link
-                        to={`/jobs/${job.id}/apply`}
-                        className="flex-1 text-center px-3 py-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        to="/resume-builder"
+                        className="inline-block px-3 py-2 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50"
                       >
-                        Apply Now
+                        Build Resume
                       </Link>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <StarIcon className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                <h3 className="text-sm font-medium text-gray-900 mb-1">No Personalized Recommendations Yet</h3>
-                <p className="text-xs text-gray-600 mb-4">
-                  Complete your profile and build your resume to get job recommendations tailored just for you!
-                </p>
-                <div className="space-x-2">
-                  <Link
-                    to="/complete-profile"
-                    className="inline-block px-3 py-2 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Complete Profile
-                  </Link>
-                  <Link
-                    to="/resume-builder"
-                    className="inline-block px-3 py-2 text-xs border border-blue-300 text-blue-700 rounded hover:bg-blue-50"
-                  >
-                    Build Resume
-                  </Link>
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -445,40 +538,31 @@ export const Jobs: React.FC = () => {
                 >
                   View Details
                 </Link>
-                <Link
-                  to={`/jobs/${job.id}/apply`}
-                  className="flex-1 text-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
-                >
-                  Apply Now
-                </Link>
+                {user?.role === 'user' ? (
+                  <Link
+                    to={`/jobs/${job.id}/apply`}
+                    className="flex-1 text-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                  >
+                    Apply Now
+                  </Link>
+                ) : (user?.role === 'coordinator' || user?.role === 'company') ? (
+                  <div className="flex-1 text-center px-4 py-2 bg-gray-100 text-gray-500 rounded-lg cursor-not-allowed">
+                    View Only
+                  </div>
+                ) : !user ? (
+                  <Link
+                    to="/login"
+                    className="flex-1 text-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                  >
+                    Login to Apply
+                  </Link>
+                ) : null}
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* CTA Section */}
-      <div className="mt-12 bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg p-8 text-center text-white">
-        <h2 className="text-2xl font-bold mb-4">Ready to Start Your Career?</h2>
-        <p className="text-blue-100 mb-6 max-w-2xl mx-auto">
-          Join thousands of ACC students and alumni who have found their dream jobs through our platform.
-          Create your profile and start applying today!
-        </p>
-        <div className="space-x-4">
-          <Link
-            to="/complete-profile"
-            className="bg-white text-blue-600 px-6 py-3 rounded-lg font-medium hover:bg-blue-50 transition-colors inline-block"
-          >
-            Complete Your Profile
-          </Link>
-          <Link
-            to="/resume-builder"
-            className="border-2 border-white text-white px-6 py-3 rounded-lg font-medium hover:bg-white hover:text-blue-600 transition-colors inline-block"
-          >
-            Build Your Resume
-          </Link>
-        </div>
-      </div>
     </div>
   );
 };

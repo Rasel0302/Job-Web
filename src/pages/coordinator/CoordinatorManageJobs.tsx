@@ -301,7 +301,10 @@ export const CoordinatorManageJobs: React.FC = () => {
                         <div className="flex items-center">
                           <UserGroupIcon className="h-4 w-4 text-gray-400 mr-2" />
                           <span className="text-sm text-gray-900">
-                            {job.application_count} / {job.positions_available}
+                            {job.application_limit 
+                              ? `${job.application_count}/${job.application_limit} applications`
+                              : `${job.application_count}/${job.positions_available} applied`
+                            }
                           </span>
                         </div>
                       </td>
@@ -329,13 +332,15 @@ export const CoordinatorManageJobs: React.FC = () => {
                               <PencilIcon className="h-4 w-4" />
                             </Link>
                           )}
-                          <Link
-                            to={`/jobs/${job.id}/applications`}
-                            className="text-green-600 hover:text-green-900"
-                            title="View Applications"
-                          >
-                            <UserGroupIcon className="h-4 w-4" />
-                          </Link>
+                          {job.created_by_type === 'coordinator' && (
+                            <Link
+                              to={`/jobs/${job.id}/applications`}
+                              className="text-green-600 hover:text-green-900"
+                              title="View Applications"
+                            >
+                              <UserGroupIcon className="h-4 w-4" />
+                            </Link>
+                          )}
                           {job.created_by_type === 'coordinator' && (
                             <button
                               onClick={() => setDeleteJobId(job.id)}

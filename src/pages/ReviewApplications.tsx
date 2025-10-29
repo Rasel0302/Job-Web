@@ -17,7 +17,8 @@ import {
   ArrowLeftIcon,
   CalendarIcon,
   LinkIcon,
-  StarIcon
+  StarIcon,
+  CheckCircleIcon
 } from '@heroicons/react/24/outline';
 
 interface JobApplication {
@@ -34,7 +35,7 @@ interface JobApplication {
   resume_file: string;
   resume_builder_link: string;
   interview_video: string;
-  status: 'pending' | 'under_review' | 'qualified' | 'rejected' | 'hired';
+  status: 'pending' | 'qualified' | 'rejected' | 'accepted' | 'interview_scheduled' | 'interview_completed' | 'pending_review' | 'hired';
   created_at: string;
   updated_at: string;
   profile_photo: string;
@@ -43,6 +44,14 @@ interface JobApplication {
   experience_match_score: number;
   comment_count: number;
   screening_answers: ScreeningAnswer[];
+  scheduled_interview_date?: string;
+  interview_id?: number;
+  
+  // Employment history fields
+  employment_count?: number;
+  last_hired_date?: string;
+  last_job_title?: string;
+  current_employment_status?: string;
   
   // Rating fields
   user_rating?: number;
@@ -105,6 +114,24 @@ export const ReviewApplications: React.FC = () => {
   const [preScreeningFilter, setPreScreeningFilter] = useState<boolean>(false);
   const [showApplicationDetails, setShowApplicationDetails] = useState(false);
   const [jobOwnership, setJobOwnership] = useState<{created_by_type: string, created_by_id: number} | null>(null);
+  
+  // Accept/Reject Modal States
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [actionApplication, setActionApplication] = useState<JobApplication | null>(null);
+  
+  // Interview Scheduling Form
+  const [interviewForm, setInterviewForm] = useState({
+    date: '',
+    time: '',
+    mode: 'onsite' as 'onsite' | 'online',
+    location: '',
+    link: '',
+    notes: ''
+  });
+  
+  // Rejection Form
+  const [rejectionReason, setRejectionReason] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -210,6 +237,13 @@ export const ReviewApplications: React.FC = () => {
       return;
     }
 
+    // Check if current status is final
+    const currentApp = applications.find(app => app.id === applicationId);
+    if (currentApp && ['accepted', 'rejected', 'hired'].includes(currentApp.status)) {
+      toast.error('Cannot change status: Application has been finalized');
+      return;
+    }
+
     try {
       setSubmitting(true);
       await api.patch(`/jobs/applications/${applicationId}/status`, { status });
@@ -221,6 +255,95 @@ export const ReviewApplications: React.FC = () => {
     } catch (error: any) {
       console.error('Failed to update application status:', error);
       toast.error(error.response?.data?.message || 'Failed to update status');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Open Accept Modal
+  const handleAccept = (application: JobApplication) => {
+    setActionApplication(application);
+    setInterviewForm({
+      date: '',
+      time: '',
+      mode: 'onsite',
+      location: '',
+      link: '',
+      notes: ''
+    });
+    setShowAcceptModal(true);
+  };
+
+  // Open Reject Modal
+  const handleReject = (application: JobApplication) => {
+    setActionApplication(application);
+    setRejectionReason('');
+    setShowRejectModal(true);
+  };
+
+  // Submit Accept with Interview Scheduling
+  const submitAccept = async () => {
+    if (!actionApplication || !interviewForm.date || !interviewForm.time) {
+      toast.error('Please fill in all required interview details');
+      return;
+    }
+
+    const interviewDateTime = `${interviewForm.date} ${interviewForm.time}`;
+    const locationOrLink = interviewForm.mode === 'onsite' ? interviewForm.location : interviewForm.link;
+
+    if (!locationOrLink) {
+      toast.error(`Please provide ${interviewForm.mode === 'onsite' ? 'location' : 'link'} for the interview`);
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      
+      // Accept application and schedule interview
+      await api.post(`/jobs/applications/${actionApplication.id}/accept`, {
+        interviewDate: interviewDateTime,
+        interviewMode: interviewForm.mode,
+        interviewLocation: interviewForm.mode === 'onsite' ? locationOrLink : null,
+        interviewLink: interviewForm.mode === 'online' ? locationOrLink : null,
+        notes: interviewForm.notes
+      });
+
+      toast.success('Application accepted and interview scheduled!');
+      
+      // Close modal and refresh
+      setShowAcceptModal(false);
+      setActionApplication(null);
+      fetchApplications();
+      
+    } catch (error: any) {
+      console.error('Failed to accept application:', error);
+      toast.error(error.response?.data?.message || 'Failed to accept application');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Submit Reject with Reason
+  const submitReject = async () => {
+    if (!actionApplication) return;
+
+    try {
+      setSubmitting(true);
+      
+      await api.post(`/jobs/applications/${actionApplication.id}/reject`, {
+        reason: rejectionReason
+      });
+
+      toast.success('Application rejected and email sent to applicant');
+      
+      // Close modal and refresh
+      setShowRejectModal(false);
+      setActionApplication(null);
+      fetchApplications();
+      
+    } catch (error: any) {
+      console.error('Failed to reject application:', error);
+      toast.error(error.response?.data?.message || 'Failed to reject application');
     } finally {
       setSubmitting(false);
     }
@@ -281,8 +404,11 @@ export const ReviewApplications: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'under_review': return 'bg-blue-100 text-blue-800';
       case 'qualified': return 'bg-green-100 text-green-800';
+      case 'accepted': return 'bg-emerald-100 text-emerald-800';
+      case 'interview_scheduled': return 'bg-cyan-100 text-cyan-800';
+      case 'interview_completed': return 'bg-indigo-100 text-indigo-800';
+      case 'pending_review': return 'bg-orange-100 text-orange-800';
       case 'rejected': return 'bg-red-100 text-red-800';
       case 'hired': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -364,8 +490,11 @@ export const ReviewApplications: React.FC = () => {
             >
               <option value="all">All Status</option>
               <option value="pending">Pending</option>
-              <option value="under_review">Under Review</option>
               <option value="qualified">Qualified</option>
+              <option value="accepted">Accepted</option>
+              <option value="interview_scheduled">Interview Scheduled</option>
+              <option value="interview_completed">Interview Completed</option>
+              <option value="pending_review">Pending Review</option>
               <option value="rejected">Rejected</option>
               <option value="hired">Hired</option>
             </select>
@@ -430,12 +559,19 @@ export const ReviewApplications: React.FC = () => {
                           className="h-12 w-12 rounded-full object-cover"
                           src={application.profile_photo}
                           alt={`${application.first_name} ${application.last_name}`}
+                          onLoad={() => {
+                            console.log('✅ Image loaded successfully:', application.profile_photo);
+                          }}
+                          onError={(e) => {
+                            console.error('❌ Image failed to load:', application.profile_photo);
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                          }}
                         />
-                      ) : (
-                        <div className="h-12 w-12 rounded-full bg-gray-300 flex items-center justify-center">
-                          <UserIcon className="h-6 w-6 text-gray-600" />
-                        </div>
-                      )}
+                      ) : null}
+                      <div className={`h-12 w-12 rounded-full bg-gray-300 flex items-center justify-center ${application.profile_photo ? 'hidden' : ''}`}>
+                        <UserIcon className="h-6 w-6 text-gray-600" />
+                      </div>
                     </div>
                     
                     <div className="flex-1">
@@ -496,26 +632,31 @@ export const ReviewApplications: React.FC = () => {
                     {/* Only show accept/decline for coordinator's own jobs */}
                     {user?.role === 'coordinator' && isOwnJob && (
                       <div className="flex space-x-2">
-                        {application.status !== 'qualified' && application.status !== 'hired' && (
-                          <button
-                            onClick={() => updateApplicationStatus(application.id, 'qualified')}
-                            disabled={submitting}
-                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                          >
-                            <CheckIcon className="h-4 w-4 mr-1" />
-                            Accept
-                          </button>
+                        {!['accepted', 'rejected', 'hired'].includes(application.status) && (
+                          <>
+                            <button
+                              onClick={() => handleAccept(application)}
+                              disabled={submitting}
+                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                            >
+                              <CheckIcon className="h-4 w-4 mr-1" />
+                              Accept
+                            </button>
+                            <button
+                              onClick={() => handleReject(application)}
+                              disabled={submitting}
+                              className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                            >
+                              <XMarkIcon className="h-4 w-4 mr-1" />
+                              Reject
+                            </button>
+                          </>
                         )}
                         
-                        {application.status !== 'rejected' && (
-                          <button
-                            onClick={() => updateApplicationStatus(application.id, 'rejected')}
-                            disabled={submitting}
-                            className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                          >
-                            <XMarkIcon className="h-4 w-4 mr-1" />
-                            Reject
-                          </button>
+                        {['accepted', 'rejected', 'hired'].includes(application.status) && (
+                          <div className="text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded">
+                            Status: {application.status.replace('_', ' ').toUpperCase()}
+                          </div>
                         )}
                       </div>
                     )}
@@ -555,6 +696,26 @@ export const ReviewApplications: React.FC = () => {
               <div className="space-y-6">
                 <div>
                   <h4 className="text-lg font-medium text-gray-900 mb-4">Personal Information</h4>
+                  
+                  {/* Profile Photo */}
+                  <div className="flex justify-center mb-6">
+                    {selectedApplication.profile_photo ? (
+                      <img
+                        src={selectedApplication.profile_photo}
+                        alt={`${selectedApplication.first_name} ${selectedApplication.last_name}`}
+                        className="h-24 w-24 rounded-full object-cover border-4 border-gray-200 shadow-md"
+                        onError={(e) => {
+                          console.error('❌ Details modal image failed to load:', selectedApplication.profile_photo);
+                          (e.target as HTMLImageElement).style.display = 'none';
+                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`h-24 w-24 rounded-full bg-gray-200 flex items-center justify-center border-4 border-gray-200 shadow-md ${selectedApplication.profile_photo ? 'hidden' : ''}`}>
+                      <UserIcon className="h-12 w-12 text-gray-400" />
+                    </div>
+                  </div>
+                  
                   <div className="space-y-3">
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Full Name</label>
@@ -576,6 +737,32 @@ export const ReviewApplications: React.FC = () => {
                     )}
                   </div>
                 </div>
+
+                {/* Employment History Alert */}
+                {selectedApplication.employment_count && selectedApplication.employment_count > 0 && (
+                  <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <CheckCircleIcon className="h-5 w-5 text-yellow-500 mr-2" />
+                      <div className="flex-1">
+                        <h4 className="text-sm font-medium text-yellow-800">
+                          Previously Hired by Related Company
+                        </h4>
+                        <p className="text-sm text-yellow-700 mt-1">
+                          This applicant was hired {selectedApplication.employment_count} time(s) by a company you coordinate.
+                          Last position: <span className="font-medium">{selectedApplication.last_job_title}</span>
+                          {selectedApplication.last_hired_date && (
+                            <span> on {new Date(selectedApplication.last_hired_date).toLocaleDateString()}</span>
+                          )}
+                          {selectedApplication.current_employment_status && (
+                            <span className="block mt-1">
+                              Current status: <span className="font-medium capitalize">{selectedApplication.current_employment_status.replace('_', ' ')}</span>
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <h4 className="text-lg font-medium text-gray-900 mb-4">Application Details</h4>
@@ -658,29 +845,31 @@ export const ReviewApplications: React.FC = () => {
                         </span>
                       </div>
                       
-                      <div className="flex space-x-3">
-                        <button
-                          onClick={() => updateApplicationStatus(selectedApplication.id, 'under_review')}
-                          disabled={submitting}
-                          className="flex-1 px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                        >
-                          Under Review
-                        </button>
-                        <button
-                          onClick={() => updateApplicationStatus(selectedApplication.id, 'qualified')}
-                          disabled={submitting}
-                          className="flex-1 px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                        >
-                          Accept
-                        </button>
-                        <button
-                          onClick={() => updateApplicationStatus(selectedApplication.id, 'rejected')}
-                          disabled={submitting}
-                          className="flex-1 px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
+                      {['accepted', 'rejected', 'hired'].includes(selectedApplication.status) ? (
+                        <div className="text-center py-4">
+                          <p className="text-sm text-gray-600 mb-2">Application status is final</p>
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(selectedApplication.status)}`}>
+                            {selectedApplication.status.replace('_', ' ').toUpperCase()}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex space-x-3">
+                          <button
+                            onClick={() => handleAccept(selectedApplication)}
+                            disabled={submitting}
+                            className="flex-1 px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => handleReject(selectedApplication)}
+                            disabled={submitting}
+                            className="flex-1 px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -745,6 +934,181 @@ export const ReviewApplications: React.FC = () => {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Accept Application Modal */}
+      {showAcceptModal && actionApplication && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Accept Application - Schedule Interview
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Accepting {actionApplication.first_name} {actionApplication.last_name} for {actionApplication.position_applying_for}
+              </p>
+
+              <div className="space-y-4">
+                {/* Date and Time */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Interview Date <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={interviewForm.date}
+                      onChange={(e) => setInterviewForm(prev => ({ ...prev, date: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Interview Time <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="time"
+                      value={interviewForm.time}
+                      onChange={(e) => setInterviewForm(prev => ({ ...prev, time: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Interview Mode */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Interview Mode <span className="text-red-500">*</span>
+                  </label>
+                  <div className="flex space-x-4">
+                    <label className="inline-flex items-center">
+                      <input
+                        type="radio"
+                        value="onsite"
+                        checked={interviewForm.mode === 'onsite'}
+                        onChange={(e) => setInterviewForm(prev => ({ ...prev, mode: e.target.value as 'onsite' | 'online' }))}
+                        className="form-radio h-4 w-4 text-green-600"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Onsite</span>
+                    </label>
+                    <label className="inline-flex items-center">
+                      <input
+                        type="radio"
+                        value="online"
+                        checked={interviewForm.mode === 'online'}
+                        onChange={(e) => setInterviewForm(prev => ({ ...prev, mode: e.target.value as 'onsite' | 'online' }))}
+                        className="form-radio h-4 w-4 text-green-600"
+                      />
+                      <span className="ml-2 text-sm text-gray-700">Online</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Location or Link */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {interviewForm.mode === 'onsite' ? 'Interview Location' : 'Interview Link'} <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type={interviewForm.mode === 'onsite' ? 'text' : 'url'}
+                    value={interviewForm.mode === 'onsite' ? interviewForm.location : interviewForm.link}
+                    onChange={(e) => setInterviewForm(prev => ({ 
+                      ...prev, 
+                      [interviewForm.mode === 'onsite' ? 'location' : 'link']: e.target.value 
+                    }))}
+                    placeholder={interviewForm.mode === 'onsite' ? 'Enter interview location' : 'Enter interview link (e.g., Zoom, Meet)'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+
+                {/* Additional Notes */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Additional Notes / Instructions (Optional)
+                  </label>
+                  <textarea
+                    value={interviewForm.notes}
+                    onChange={(e) => setInterviewForm(prev => ({ ...prev, notes: e.target.value }))}
+                    placeholder="Any additional information for the applicant..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                  />
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                <button
+                  onClick={() => setShowAcceptModal(false)}
+                  disabled={submitting}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitAccept}
+                  disabled={submitting || !interviewForm.date || !interviewForm.time}
+                  className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                >
+                  {submitting ? 'Accepting...' : 'Accept & Schedule Interview'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Application Modal */}
+      {showRejectModal && actionApplication && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-20 mx-auto p-5 border w-full max-w-lg shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                Reject Application
+              </h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Rejecting {actionApplication.first_name} {actionApplication.last_name} for {actionApplication.position_applying_for}
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for Rejection (Optional)
+                  </label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Provide feedback to help the applicant improve..."
+                    rows={4}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    This message will be included in the rejection email sent to the applicant.
+                  </p>
+                </div>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                <button
+                  onClick={() => setShowRejectModal(false)}
+                  disabled={submitting}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitReject}
+                  disabled={submitting}
+                  className="px-4 py-2 border border-transparent rounded-md text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                >
+                  {submitting ? 'Rejecting...' : 'Reject Application'}
+                </button>
               </div>
             </div>
           </div>

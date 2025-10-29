@@ -1,573 +1,635 @@
 import nodemailer from 'nodemailer';
 import { logger } from '../utils/logger.js';
+import { Connection } from 'mysql2/promise';
 import { getConnection } from '../config/database.js';
 
-interface EmailOptions {
+interface EmailData {
   to: string;
-  subject: string;
-  html: string;
-  type?: 'otp' | 'invitation' | 'application_status' | 'job_match' | 'general';
+  applicant_name: string;
+  job_title: string;
+  company_name: string;
+  interview_date?: string;
+  interview_mode?: 'onsite' | 'online';
+  interview_location_link?: string;
+  notes?: string;
+  reason?: string;
+  details?: string;
 }
 
-class EmailService {
-  private transporter: nodemailer.Transporter;
+interface NotificationData {
+  userId: number;
+  title: string;
+  message: string;
+  type: 'interview_reminder' | 'application_status' | 'system';
+  relatedId?: number;
+}
 
-  constructor() {
-    this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+export class EmailService {
+  /**
+   * Create transporter with current environment variables
+   */
+  private static createTransporter() {
+    const isGmail = process.env.EMAIL_SERVICE === 'gmail';
+    
+    const config = {
+      host: isGmail ? 'smtp.gmail.com' : (process.env.SMTP_HOST || 'localhost'),
+      port: isGmail ? 587 : parseInt(process.env.SMTP_PORT || '587'),
+      secure: false, // true for 465, false for other ports
       auth: {
-        user: process.env.EMAIL_USER || 'raselmadrideomarana@gmail.com',
-        pass: process.env.EMAIL_PASS || 'ddxx kivl klno telq'
+        user: process.env.EMAIL_USER || process.env.SMTP_USER,
+        pass: process.env.EMAIL_PASS || process.env.SMTP_PASS
+      },
+      tls: {
+        rejectUnauthorized: false // Allow self-signed certificates
       }
-    });
+    };
+
+    logger.info(`📧 Creating SMTP transporter: ${config.host}:${config.port} (Gmail: ${isGmail})`);
+    
+    return nodemailer.createTransport(config);
   }
 
-  async sendEmail(options: EmailOptions): Promise<boolean> {
+  /**
+   * Test SMTP connection
+   */
+  static async testConnection(): Promise<boolean> {
     try {
-      const mailOptions = {
-        from: process.env.EMAIL_FROM || 'ACC Career Connect <raselmadrideomarana@gmail.com>',
-        to: options.to,
-        subject: options.subject,
-        html: options.html
-      };
-
-      const result = await this.transporter.sendMail(mailOptions);
-      
-      // Log email to database
-      await this.logEmail(options, true);
-      
-      logger.info(`Email sent successfully to ${options.to}`, result.messageId);
+      const transporter = this.createTransporter();
+      await transporter.verify();
+      logger.info('📧 SMTP connection verified successfully');
       return true;
     } catch (error) {
-      logger.error('Failed to send email:', error);
-      
-      // Log failed email to database
-      await this.logEmail(options, false, (error as Error).message);
-      
+      logger.error('📧 SMTP connection failed:', error);
       return false;
     }
   }
 
-  private async logEmail(options: EmailOptions, isSent: boolean, errorMessage?: string) {
+  /**
+   * Send application acceptance email with interview details
+   */
+  static async sendAcceptanceEmail(emailData: EmailData): Promise<number | null> {
     try {
-      const connection = getConnection();
-      await connection.execute(
-        'INSERT INTO email_notifications (recipient_email, subject, body, type, is_sent, error_message) VALUES (?, ?, ?, ?, ?, ?)',
-        [
-          options.to,
-          options.subject,
-          options.html,
-          options.type || 'general',
-          isSent,
-          errorMessage || null
-        ]
-      );
-    } catch (dbError) {
-      logger.error('Failed to log email to database:', dbError);
+      const template = await this.getEmailTemplate('application_accepted');
+      if (!template) {
+        logger.error('Application accepted email template not found');
+        return null;
+      }
+
+      const notesSection = emailData.notes ? 
+        `<h4>Additional Notes:</h4><p>${emailData.notes}</p>` : '';
+      
+      const notesText = emailData.notes ? `Notes: ${emailData.notes}` : '';
+
+      const subject = this.replaceVariables(template.subject, emailData);
+      const htmlBody = this.replaceVariables(template.body_html, {
+        ...emailData,
+        notes_section: notesSection,
+        notes_text: notesText
+      });
+      const textBody = this.replaceVariables(template.body_text, {
+        ...emailData,
+        notes_text: notesText
+      });
+
+      // Send email and return the email log ID
+      const emailLogId = await this.sendEmail({
+        to: emailData.to,
+        subject,
+        html: htmlBody,
+        text: textBody
+      });
+
+      return emailLogId;
+    } catch (error) {
+      logger.error('Error in sendAcceptanceEmail:', error);
+      return null;
     }
   }
 
-  async sendOTP(email: string, otp: string, purpose: string = 'verification'): Promise<boolean> {
-    const subject = `Your ACC Verification Code`;
-    const html = this.generateOTPTemplate(otp, purpose);
+  /**
+   * Send application rejection email
+   */
+  static async sendRejectionEmail(emailData: EmailData): Promise<number | null> {
+    try {
+      const template = await this.getEmailTemplate('application_rejected');
+      if (!template) {
+        logger.error('Application rejected email template not found');
+        return null;
+      }
+
+      const reasonSection = emailData.reason ? 
+        `<h4>Feedback:</h4><p>${emailData.reason}</p>` : '';
+      
+      const reasonText = emailData.reason ? `Reason: ${emailData.reason}` : '';
+
+      const subject = this.replaceVariables(template.subject, emailData);
+      const htmlBody = this.replaceVariables(template.body_html, {
+        ...emailData,
+        reason_section: reasonSection,
+        reason_text: reasonText
+      });
+      const textBody = this.replaceVariables(template.body_text, {
+        ...emailData,
+        reason_text: reasonText
+      });
+
+      // Send email and return the email log ID
+      const emailLogId = await this.sendEmail({
+        to: emailData.to,
+        subject,
+        html: htmlBody,
+        text: textBody
+      });
+
+      return emailLogId;
+    } catch (error) {
+      logger.error('Error in sendRejectionEmail:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Send hired notification email
+   */
+  static async sendHiredEmail(emailData: EmailData): Promise<number | null> {
+    try {
+      const template = await this.getEmailTemplate('applicant_hired');
+      if (!template) {
+        logger.error('Applicant hired email template not found');
+        return null;
+      }
+
+      const detailsSection = emailData.details ? 
+        `<h4>Next Steps:</h4><p>${emailData.details}</p>` : '';
+      
+      const detailsText = emailData.details ? `Details: ${emailData.details}` : '';
+
+      const subject = this.replaceVariables(template.subject, emailData);
+      const htmlBody = this.replaceVariables(template.body_html, {
+        ...emailData,
+        details_section: detailsSection,
+        details_text: detailsText
+      });
+      const textBody = this.replaceVariables(template.body_text, {
+        ...emailData,
+        details_text: detailsText
+      });
+
+      // Send email and return the email log ID
+      const emailLogId = await this.sendEmail({
+        to: emailData.to,
+        subject,
+        html: htmlBody,
+        text: textBody
+      });
+
+      return emailLogId;
+    } catch (error) {
+      logger.error('Error in sendHiredEmail:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Send post-interview rejection email
+   */
+  static async sendPostInterviewRejectionEmail(emailData: EmailData): Promise<number | null> {
+    try {
+      const template = await this.getEmailTemplate('post_interview_rejected');
+      if (!template) {
+        logger.error('Post interview rejection email template not found');
+        return null;
+      }
+
+      const feedbackSection = emailData.reason ? 
+        `<h4>Feedback:</h4><p>${emailData.reason}</p>` : '';
+      
+      const feedbackText = emailData.reason ? `Feedback: ${emailData.reason}` : '';
+
+      const subject = this.replaceVariables(template.subject, emailData);
+      const htmlBody = this.replaceVariables(template.body_html, {
+        ...emailData,
+        feedback_section: feedbackSection,
+        feedback_text: feedbackText
+      });
+      const textBody = this.replaceVariables(template.body_text, {
+        ...emailData,
+        feedback_text: feedbackText
+      });
+
+      // Send email and return the email log ID
+      const emailLogId = await this.sendEmail({
+        to: emailData.to,
+        subject,
+        html: htmlBody,
+        text: textBody
+      });
+
+      return emailLogId;
+    } catch (error) {
+      logger.error('Error in sendPostInterviewRejectionEmail:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Send interview reminder emails (1 week, 1 day, 1 hour)
+   */
+  static async sendInterviewReminder(
+    reminderType: '1week' | '1day' | '1hour',
+    emailData: EmailData
+  ): Promise<number | null> {
+    try {
+      const templateName = `interview_reminder_${reminderType}`;
+      const template = await this.getEmailTemplate(templateName);
+      
+      if (!template) {
+        logger.error(`Interview reminder template not found: ${templateName}`);
+        return null;
+      }
+
+      const subject = this.replaceVariables(template.subject, emailData);
+      const htmlBody = this.replaceVariables(template.body_html, emailData);
+      const textBody = this.replaceVariables(template.body_text, emailData);
+
+      // Send email and return the email log ID
+      const emailLogId = await this.sendEmail({
+        to: emailData.to,
+        subject,
+        html: htmlBody,
+        text: textBody
+      });
+
+      return emailLogId;
+    } catch (error) {
+      logger.error(`Error in send${reminderType}Reminder:`, error);
+      return null;
+    }
+  }
+
+
+  /**
+   * Get user's unread notifications
+   */
+  static async getUserNotifications(userId: number): Promise<any[]> {
+    const connection = getConnection();
+    try {
+      const [notifications] = await connection.execute(`
+        SELECT id, title, message, type, created_at, is_read
+        FROM user_notifications 
+        WHERE user_id = ? AND expires_at > NOW()
+        ORDER BY created_at DESC
+        LIMIT 50
+      `, [userId]);
+
+      return notifications as any[];
+    } catch (error) {
+      logger.error('Error fetching user notifications:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Mark notification as read
+   */
+  static async markNotificationAsRead(notificationId: number): Promise<void> {
+    const connection = getConnection();
+    try {
+      await connection.execute(`
+        UPDATE user_notifications 
+        SET is_read = TRUE 
+        WHERE id = ?
+      `, [notificationId]);
+    } catch (error) {
+      logger.error('Error marking notification as read:', error);
+    }
+  }
+
+  /**
+   * Clean up expired notifications (called by cron job)
+   */
+  static async cleanupExpiredNotifications(): Promise<void> {
+    const connection = getConnection();
+    try {
+      const [result] = await connection.execute(`
+        DELETE FROM user_notifications 
+        WHERE expires_at <= NOW()
+      `);
+
+      logger.info(`Cleaned up expired notifications: ${(result as any).affectedRows} rows deleted`);
+    } catch (error) {
+      logger.error('Error cleaning up expired notifications:', error);
+    }
+  }
+
+  /**
+   * Get email template from database
+   */
+  private static async getEmailTemplate(templateName: string): Promise<any> {
+    const connection = getConnection();
+    try {
+      const [templates] = await connection.execute(`
+        SELECT subject, body_html, body_text 
+        FROM email_templates 
+        WHERE template_name = ?
+      `, [templateName]);
+
+      const templateArray = templates as any[];
+      return templateArray.length > 0 ? templateArray[0] : null;
+    } catch (error) {
+      logger.error('Error fetching email template:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Replace variables in email templates
+   */
+  private static replaceVariables(template: string, data: any): string {
+    let result = template;
     
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      type: 'otp'
+    Object.keys(data).forEach(key => {
+      const placeholder = `{${key}}`;
+      const value = data[key] || '';
+      result = result.replace(new RegExp(placeholder, 'g'), value);
     });
+
+    return result;
   }
 
-  async sendWelcomeEmail(email: string, firstName: string, role: string): Promise<boolean> {
-    const subject = 'Welcome to Asiatech Career Connect!';
-    const html = this.generateWelcomeTemplate(firstName, role);
-    
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      type: 'general'
-    });
-  }
-
-  async sendInvitationEmail(email: string, inviterName: string, companyName: string, inviteLink: string): Promise<boolean> {
-    const subject = 'Invitation to Join ACC Career Connect';
-    const html = this.generateInvitationTemplate(inviterName, companyName, inviteLink);
-    
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      type: 'invitation'
-    });
-  }
-
-  async sendApplicationStatusUpdate(email: string, jobTitle: string, companyName: string, status: string): Promise<boolean> {
-    const subject = `Application Update: ${jobTitle} at ${companyName}`;
-    const html = this.generateApplicationStatusTemplate(jobTitle, companyName, status);
-    
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      type: 'application_status'
-    });
-  }
-
-  async sendJobMatchNotification(email: string, jobTitle: string, companyName: string, matchScore: number): Promise<boolean> {
-    const subject = `New Job Match Found: ${jobTitle}`;
-    const html = this.generateJobMatchTemplate(jobTitle, companyName, matchScore);
-    
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      type: 'job_match'
-    });
-  }
-
-  private generateOTPTemplate(otp: string, purpose: string): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-          .otp-box { background: white; border: 2px solid #16a34a; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }
-          .otp-code { font-size: 32px; font-weight: bold; color: #16a34a; letter-spacing: 5px; }
-          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>ACC Career Connect</h1>
-            <p>Asiatech Career Connect</p>
-          </div>
-          <div class="content">
-            <h2>Verification Code</h2>
-            <p>Your verification code for ${purpose} is:</p>
-            <div class="otp-box">
-              <div class="otp-code">${otp}</div>
-            </div>
-            <p><strong>This code will expire in 10 minutes.</strong></p>
-            <p>If you didn't request this code, please ignore this email.</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>
-          </div>
+  /**
+   * Send OTP email for registration/verification
+   */
+  static async sendOTP(email: string, otp: string, purpose: string): Promise<boolean> {
+    try {
+      const subject = `Your OTP Code for ${purpose}`;
+      const html = `
+        <h2>Email Verification</h2>
+        <p>Your OTP code for ${purpose} is:</p>
+        <div style="background: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0;">
+          <h1 style="color: #16a34a; font-size: 32px; letter-spacing: 8px; margin: 0;">${otp}</h1>
         </div>
-      </body>
-      </html>
-    `;
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+      `;
+      const text = `Your OTP code for ${purpose}: ${otp}. This code will expire in 10 minutes.`;
+
+      await this.sendEmail({ to: email, subject, html, text });
+      return true;
+    } catch (error) {
+      logger.error('Error sending OTP email:', error);
+      return false;
+    }
   }
 
-  private generateWelcomeTemplate(firstName: string, role: string): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-          .btn { display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Welcome to ACC!</h1>
-            <p>Asiatech Career Connect</p>
-          </div>
-          <div class="content">
-            <h2>Hello ${firstName}!</h2>
-            <p>Welcome to Asiatech Career Connect! We're excited to have you join our platform as a ${role}.</p>
-            <p>ACC is designed to make job finding easier for OJT college students and alumni. Our platform connects students with opportunities that match their skills and career goals.</p>
-            <p>Get started by completing your profile and exploring the available opportunities.</p>
-            <a href="${process.env.FRONTEND_URL}" class="btn">Start Exploring</a>
-          </div>
-          <div class="footer">
-            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+  /**
+   * Send approval/rejection email for admin decisions
+   */
+  static async sendApprovalEmail(email: string, type: string, approved: boolean, reason?: string): Promise<boolean> {
+    try {
+      const subject = approved 
+        ? `Account Approved - Welcome to Asiatech Career Center!`
+        : `Account Application Update`;
+      
+      const html = approved 
+        ? `
+          <h2>Congratulations! Your account has been approved</h2>
+          <p>Your ${type} account for Asiatech Career Center has been approved by our admin team.</p>
+          <p>You can now log in and start using the platform.</p>
+          <p>Best regards,<br>Asiatech Career Center Admin Team</p>
+        `
+        : `
+          <h2>Account Application Update</h2>
+          <p>We regret to inform you that your ${type} account application has not been approved at this time.</p>
+          ${reason ? `<p><strong>Reason:</strong> ${reason}</p>` : ''}
+          <p>You may reapply in the future if you believe this decision was made in error.</p>
+          <p>Best regards,<br>Asiatech Career Center Admin Team</p>
+        `;
+
+      const text = approved
+        ? `Your ${type} account has been approved! You can now log in to Asiatech Career Center.`
+        : `Your ${type} account application was not approved. ${reason ? `Reason: ${reason}` : ''}`;
+
+      await this.sendEmail({ to: email, subject, html, text });
+      return true;
+    } catch (error) {
+      logger.error('Error sending approval email:', error);
+      return false;
+    }
   }
 
-  private generateInvitationTemplate(inviterName: string, companyName: string, inviteLink: string): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-          .btn { display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>You're Invited!</h1>
-            <p>Asiatech Career Connect</p>
-          </div>
-          <div class="content">
-            <h2>Join ACC as ${companyName}</h2>
-            <p>Hello!</p>
-            <p>${inviterName} has invited you to join Asiatech Career Connect as a company representative for ${companyName}.</p>
-            <p>ACC connects talented OJT students and alumni with great companies like yours. Join us to find the perfect candidates for your open positions.</p>
-            <a href="${inviteLink}" class="btn">Accept Invitation</a>
-            <p><small>This invitation link will expire in 7 days.</small></p>
-          </div>
-          <div class="footer">
-            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
+  /**
+   * Send welcome email after successful registration
+   */
+  static async sendWelcomeEmail(email: string, name: string, role: string): Promise<boolean> {
+    try {
+      const subject = 'Welcome to Asiatech Career Center!';
+      const html = `
+        <h2>Welcome to Asiatech Career Center, ${name}!</h2>
+        <p>Your ${role} account has been successfully created.</p>
+        <p>You can now log in and start exploring opportunities.</p>
+        <p>Best regards,<br>Asiatech Career Center Team</p>
+      `;
+      const text = `Welcome to Asiatech Career Center, ${name}! Your ${role} account has been successfully created.`;
+
+      await this.sendEmail({ to: email, subject, html, text });
+      return true;
+    } catch (error) {
+      logger.error('Error sending welcome email:', error);
+      return false;
+    }
   }
 
-  private generateApplicationStatusTemplate(jobTitle: string, companyName: string, status: string): string {
-    const statusColors: {[key: string]: string} = {
-      'reviewed': '#f59e0b',
-      'interviewed': '#3b82f6',
-      'accepted': '#10b981',
-      'rejected': '#ef4444'
-    };
-    
-    const statusColor = statusColors[status] || '#6b7280';
-    
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-          .status-badge { display: inline-block; background: ${statusColor}; color: white; padding: 8px 16px; border-radius: 20px; font-weight: bold; text-transform: uppercase; }
-          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Application Update</h1>
-            <p>Asiatech Career Connect</p>
-          </div>
-          <div class="content">
-            <h2>${jobTitle} at ${companyName}</h2>
-            <p>Your application status has been updated:</p>
-            <div style="text-align: center; margin: 20px 0;">
-              <span class="status-badge">${status}</span>
-            </div>
-            <p>Thank you for using ACC to advance your career. Keep exploring new opportunities!</p>
-          </div>
-          <div class="footer">
-            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-  }
-
-  private generateJobMatchTemplate(jobTitle: string, companyName: string, matchScore: number): string {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-          .match-score { background: white; border: 2px solid #10b981; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }
-          .score { font-size: 48px; font-weight: bold; color: #10b981; }
-          .btn { display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Perfect Match Found!</h1>
-            <p>Asiatech Career Connect</p>
-          </div>
-          <div class="content">
-            <h2>${jobTitle}</h2>
-            <p><strong>Company:</strong> ${companyName}</p>
-            <p>We found a great job match for you based on your resume and preferences!</p>
-            <div class="match-score">
-              <div class="score">${matchScore}%</div>
-              <p>Match Score</p>
-            </div>
-            <p>This position aligns well with your skills and experience. Don't miss this opportunity!</p>
-            <a href="${process.env.FRONTEND_URL}/jobs" class="btn">View Job Details</a>
-          </div>
-          <div class="footer">
-            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-  }
-
-  async sendApprovalEmail(email: string, userType: string, approved: boolean, reason?: string): Promise<boolean> {
-    const subject = approved 
-      ? `✅ Your ${userType} account has been approved!`
-      : `❌ Your ${userType} account application`;
-
-    const actionColor = approved ? '#16a34a' : '#ef4444';
-    const actionText = approved ? 'APPROVED' : 'REJECTED';
-    const message = approved 
-      ? `Great news! Your ${userType} account has been approved and is now active.`
-      : `We regret to inform you that your ${userType} account application was not approved.`;
-
-    const nextSteps = approved 
-      ? (userType === 'admin' 
-          ? 'You now have full administrative access to the ACC Career Connect platform. You can login and start managing the system.'
-          : `You can now login to your ${userType} account and start using ACC Career Connect.`)
-      : 'If you believe this is an error or would like to reapply, please contact our support team.';
-
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <title>Account ${actionText}</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f5f5f5; }
-          .container { max-width: 600px; margin: 0 auto; background-color: white; }
-          .header { background-color: ${actionColor}; color: white; padding: 30px; text-align: center; }
-          .content { padding: 30px; }
-          .status-badge { 
-            display: inline-block; 
-            padding: 8px 16px; 
-            background-color: ${actionColor}; 
-            color: white; 
-            border-radius: 20px; 
-            font-weight: bold; 
-            font-size: 12px; 
-            text-transform: uppercase; 
-            margin-bottom: 20px;
-          }
-          .button { 
-            display: inline-block; 
-            padding: 12px 24px; 
-            background-color: #3b82f6; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            margin: 20px 0; 
-          }
-          .footer { background-color: #f8f9fa; padding: 20px; text-align: center; color: #666; font-size: 14px; }
-          .reason-box { 
-            background-color: #fef2f2; 
-            border: 1px solid #fecaca; 
-            border-radius: 5px; 
-            padding: 15px; 
-            margin: 20px 0;
-            color: #991b1b;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Account ${actionText}</h1>
-            <p>ACC Career Connect</p>
-          </div>
-          
-          <div class="content">
-            <div class="status-badge">${actionText}</div>
-            
-            <h2>Hello,</h2>
-            
-            <p>${message}</p>
-            
-            ${!approved && reason ? `
-              <div class="reason-box">
-                <strong>Reason:</strong> ${reason}
-              </div>
-            ` : ''}
-            
-            <p><strong>Account Type:</strong> ${userType.charAt(0).toUpperCase() + userType.slice(1)}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            
-            <h3>What's Next?</h3>
-            <p>${nextSteps}</p>
-            
-            ${approved ? `
-              <a href="${process.env.FRONTEND_URL}/login" class="button">Login to Your Account</a>
-            ` : ''}
-            
-            <p>If you have any questions, please don't hesitate to contact our support team.</p>
-            
-            <p>Best regards,<br>
-            <strong>ACC Career Connect Team</strong></p>
-          </div>
-          
-          <div class="footer">
-            <p>© 2025 ACC Career Connect. All rights reserved.</p>
-            <p>Asiatech College Career Platform</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      type: 'general'
-    });
-  }
-
-  async sendCompanyInvitation(params: {
+  /**
+   * Send company invitation email from coordinator
+   */
+  static async sendCompanyInvitation(invitationData: {
     recipientEmail: string;
     recipientName: string;
     coordinatorName: string;
     coordinatorEmail: string;
     course: string;
-    message: string;
-    invitationToken: string;
-    expirationDate: Date;
+    invitationLink: string;
   }): Promise<boolean> {
-    const subject = `Invitation to Join ACC Career Connect Platform - ${params.course}`;
-    const registrationUrl = `${process.env.FRONTEND_URL}/register?token=${params.invitationToken}`;
-    
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Company Invitation - ACC Career Connect</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
-          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
-          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }
-          .content { padding: 30px; }
-          .message-box { background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 20px; margin: 20px 0; }
-          .coordinator-info { background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0; }
-          .button { 
-            display: inline-block; 
-            padding: 15px 30px; 
-            background-color: #007bff; 
-            color: white; 
-            text-decoration: none; 
-            border-radius: 5px; 
-            margin: 20px 0; 
-            font-weight: bold; 
-          }
-          .code-info { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0; }
-          .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }
-          .expiry-notice { background-color: #f8d7da; border: 1px solid #f1c2c2; padding: 10px; border-radius: 5px; margin: 15px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🎓 ACC Career Connect</h1>
-            <h2>Company Partnership Invitation</h2>
+    try {
+      const subject = `Invitation to Join Asiatech Career Center - ${invitationData.course}`;
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+          <h2 style="color: #28a745;">You're Invited to Join Asiatech Career Center!</h2>
+          <p>Dear ${invitationData.recipientName},</p>
+          <p>You have been invited by <strong>${invitationData.coordinatorName}</strong> to join the Asiatech Career Center platform as a company partner.</p>
+          
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3>Invitation Details:</h3>
+            <p><strong>Coordinator:</strong> ${invitationData.coordinatorName}</p>
+            <p><strong>Contact:</strong> ${invitationData.coordinatorEmail}</p>
+            <p><strong>Course:</strong> ${invitationData.course}</p>
           </div>
           
-          <div class="content">
-            <h3>Dear ${params.recipientName},</h3>
-            
-            <p>You have been invited to join the ACC Career Connect platform as a company partner!</p>
-            
-            <div class="coordinator-info">
-              <h4>📧 Invitation From:</h4>
-              <p><strong>Coordinator:</strong> ${params.coordinatorName}</p>
-              <p><strong>Email:</strong> ${params.coordinatorEmail}</p>
-              <p><strong>Course/Department:</strong> ${params.course}</p>
-            </div>
-            
-            <div class="message-box">
-              <h4>💌 Personal Message:</h4>
-              <p style="font-style: italic; line-height: 1.6;">"${params.message}"</p>
-            </div>
-            
-            <h4>🚀 What You Can Do:</h4>
-            <ul style="line-height: 1.8;">
-              <li><strong>Post Job Opportunities:</strong> Share internship, part-time, and full-time positions</li>
-              <li><strong>Access Talented Candidates:</strong> Connect with skilled students and alumni</li>
-              <li><strong>Review Applications:</strong> Manage applications with our comprehensive tools</li>
-              <li><strong>Build Your Team:</strong> Find the right talent for your company</li>
-            </ul>
-            
-            <div class="code-info">
-              <h4>🔑 Your Invitation Details:</h4>
-              <p><strong>Invitation Code:</strong> <code>${params.invitationToken}</code></p>
-              <p><strong>Invited Email:</strong> ${params.recipientEmail}</p>
-              <p><em>You'll need this code during registration to verify your invitation.</em></p>
-            </div>
-            
-            <div style="text-align: center;">
-              <a href="${registrationUrl}" class="button">🎯 Join ACC Career Connect Now</a>
-            </div>
-            
-            <div class="expiry-notice">
-              <p><strong>⏰ Important:</strong> This invitation expires on <strong>${params.expirationDate.toLocaleDateString()}</strong>. Please register before this date.</p>
-            </div>
-            
-            <h4>📋 How to Register:</h4>
-            <ol style="line-height: 1.8;">
-              <li>Click the registration button above</li>
-              <li>Select "Company/Business Owner" during registration</li>
-              <li>Use your invitation code: <strong>${params.invitationToken}</strong></li>
-              <li>Complete your company profile</li>
-              <li>Start posting jobs and finding talent!</li>
-            </ol>
-            
-            <p>If you have any questions or need assistance, please don't hesitate to contact the coordinator directly at <a href="mailto:${params.coordinatorEmail}">${params.coordinatorEmail}</a>.</p>
-            
-            <p>We look forward to having you as a partner in connecting students with great career opportunities!</p>
-            
-            <p>Best regards,<br>
-            <strong>ACC Career Connect Team</strong><br>
-            <em>Asiatech College Career Platform</em></p>
+          <p>As a company partner, you will be able to:</p>
+          <ul>
+            <li>Post job opportunities for students</li>
+            <li>Review and manage job applications</li>
+            <li>Connect with talented students and graduates</li>
+            <li>Schedule interviews and make hiring decisions</li>
+          </ul>
+          
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${invitationData.invitationLink}" 
+               style="background-color: #007bff; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+              Accept Invitation & Register
+            </a>
           </div>
           
-          <div class="footer">
-            <p>© 2025 ACC Career Connect. All rights reserved.</p>
-            <p>This invitation was sent by ${params.coordinatorName} (${params.coordinatorEmail})</p>
-            <p>If you received this email by mistake, please ignore it.</p>
-          </div>
+          <p>If you have any questions, please don't hesitate to contact the coordinator at ${invitationData.coordinatorEmail}.</p>
+          
+          <p>Best regards,<br><strong>Asiatech Career Center Team</strong></p>
+          
+          <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+          <p style="font-size: 12px; color: #666;">
+            This invitation is valid for 7 days. If you're not interested in joining, you can safely ignore this email.
+          </p>
         </div>
-      </body>
-      </html>
-    `;
+      `;
 
-    return await this.sendEmail({
-      to: params.recipientEmail,
-      subject,
-      html,
-      type: 'invitation'
-    });
+      const text = `You're invited to join Asiatech Career Center by ${invitationData.coordinatorName}. Visit: ${invitationData.invitationLink}`;
+
+      await this.sendEmail({ to: invitationData.recipientEmail, subject, html, text });
+      logger.info(`Company invitation sent to ${invitationData.recipientEmail} by coordinator ${invitationData.coordinatorName}`);
+      return true;
+
+    } catch (error) {
+      logger.error('Error sending company invitation:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send email using nodemailer
+   */
+  private static async sendEmail({
+    to, subject, html, text
+  }: {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  }): Promise<number | null> {
+    const connection = getConnection();
+    let emailLogId: number | null = null;
+    let emailSent = false;
+    
+    try {
+      const fromEmail = process.env.EMAIL_FROM || process.env.FROM_EMAIL || 'noreply@asiatech.edu.ph';
+      
+      // Log email configuration for debugging
+      logger.info(`📧 Sending email via ${process.env.EMAIL_SERVICE === 'gmail' ? 'Gmail' : 'Custom SMTP'} to ${to}`);
+      
+      // Create transporter dynamically to use current environment variables
+      const transporter = this.createTransporter();
+      
+      // First, log the email to database before sending
+      const [result] = await connection.execute(`
+        INSERT INTO email_notifications (
+          recipient_email, 
+          subject, 
+          body, 
+          type, 
+          is_sent, 
+          error_message
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        to,
+        subject,
+        html,
+        'system_email',
+        false, // Will be updated to true if sent successfully
+        null
+      ]);
+      
+      emailLogId = (result as any).insertId;
+      
+      // Now attempt to send the email
+      await transporter.sendMail({
+        from: fromEmail,
+        to,
+        subject,
+        html,
+        text
+      });
+
+      // Update the email log to mark as sent successfully
+      await connection.execute(`
+        UPDATE email_notifications 
+        SET is_sent = TRUE, sent_at = NOW() 
+        WHERE id = ?
+      `, [emailLogId]);
+      
+      emailSent = true;
+      logger.info(`✅ Email sent successfully to ${to}: ${subject} (Log ID: ${emailLogId})`);
+      
+    } catch (error) {
+      logger.error(`❌ Failed to send email to ${to}: ${subject}`, error);
+      
+      // Update email log with error if we created one
+      if (emailLogId) {
+        try {
+          await connection.execute(`
+            UPDATE email_notifications 
+            SET error_message = ? 
+            WHERE id = ?
+          `, [
+            error instanceof Error ? error.message : 'Unknown error',
+            emailLogId
+          ]);
+        } catch (updateError) {
+          logger.error('Failed to update email error log:', updateError);
+        }
+      }
+      
+      // Don't throw error to prevent breaking application flow
+      // The notification will still be added to user's profile
+    }
+    
+    return emailLogId; // Return the email log ID for linking with notifications
+  }
+
+
+  /**
+   * Add profile notification for in-app notifications
+   */
+  static async addProfileNotification(notificationData: {
+    userId: number;
+    title: string;
+    message: string;
+    type: 'interview_reminder' | 'application_status' | 'system';
+    relatedId?: number;
+  }): Promise<boolean> {
+    const connection = getConnection();
+    
+    try {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7); // Expire after 7 days
+
+      await connection.execute(`
+        INSERT INTO user_notifications (
+          user_id, title, message, type, related_id, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        notificationData.userId,
+        notificationData.title,
+        notificationData.message,
+        notificationData.type,
+        notificationData.relatedId || null,
+        expiresAt
+      ]);
+
+      logger.info(`Profile notification added for user ${notificationData.userId}: ${notificationData.title}`);
+      return true;
+
+    } catch (error) {
+      logger.error('Error adding profile notification:', error);
+      return false;
+    }
   }
 }
-
-export const emailService = new EmailService();

@@ -82,7 +82,7 @@ export const CoordinatorDashboard: React.FC = () => {
       const stats = {
         total: coordinatorJobs.length,
         active: coordinatorJobs.filter((job: any) => job.status === 'active').length,
-        applications: allJobs.reduce((sum: number, job: any) => sum + (job.application_count || 0), 0),
+        applications: coordinatorJobs.reduce((sum: number, job: any) => sum + (job.application_count || 0), 0),
         pending: 0 // Will be calculated from applications
       };
 
@@ -114,37 +114,49 @@ export const CoordinatorDashboard: React.FC = () => {
       setRecentJobs(recentJobsData);
       setAffiliatedCompanyJobs(affiliatedJobsData);
 
-      // Fetch recent applications across all jobs
-      if (allJobs.length > 0) {
-        // Get applications for all jobs (coordinator + company)
-        const applicationPromises = allJobs.slice(0, 3).map((job: any) => 
-          api.get(`/jobs/${job.id}/applications?limit=5`)
-        );
-        
-        const applicationResponses = await Promise.all(applicationPromises);
-        const allApplications: RecentApplication[] = [];
-        
-        applicationResponses.forEach((response, index) => {
-          const applications = response.data.applications || [];
-          applications.forEach((app: any) => {
-            allApplications.push({
-              id: app.id,
-              job_title: allJobs[index].title,
-              applicant_name: `${app.first_name} ${app.last_name}`,
-              status: app.status,
-              created_at: app.created_at,
-              ats_score: app.overall_score || 0
+      // Fetch recent applications across coordinator's own jobs only
+      if (coordinatorJobs.length > 0) {
+        try {
+          // Get applications for coordinator's own jobs only (not company jobs)
+          const applicationPromises = coordinatorJobs.slice(0, 3).map((job: any) => 
+            api.get(`/jobs/${job.id}/applications?limit=5`).catch(err => {
+              console.warn(`Failed to fetch applications for job ${job.id}:`, err);
+              return { data: { applications: [] } }; // Return empty applications on error
+            })
+          );
+          
+          const applicationResponses = await Promise.all(applicationPromises);
+          const allApplications: RecentApplication[] = [];
+          
+          applicationResponses.forEach((response, index) => {
+            const applications = response.data.applications || [];
+            applications.forEach((app: any) => {
+              allApplications.push({
+                id: app.id,
+                job_title: coordinatorJobs[index].title,
+                applicant_name: `${app.first_name} ${app.last_name}`,
+                status: app.status,
+                created_at: app.created_at,
+                ats_score: app.overall_score || 0
+              });
             });
           });
-        });
 
-        // Sort by date and take the 5 most recent
-        allApplications.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-        setRecentApplications(allApplications.slice(0, 5));
+          // Sort by date and take the 5 most recent
+          allApplications.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+          setRecentApplications(allApplications.slice(0, 5));
 
-        // Update pending applications count
-        const pendingCount = allApplications.filter(app => app.status === 'pending').length;
-        setJobStats(prev => ({ ...prev, pending: pendingCount }));
+          // Update pending applications count
+          const pendingCount = allApplications.filter(app => app.status === 'pending').length;
+          setJobStats(prev => ({ ...prev, pending: pendingCount }));
+        } catch (error) {
+          console.warn('Error fetching applications for dashboard:', error);
+          // Set empty applications if there's an error
+          setRecentApplications([]);
+        }
+      } else {
+        // No coordinator jobs, set empty applications
+        setRecentApplications([]);
       }
 
     } catch (error: any) {
@@ -444,7 +456,12 @@ export const CoordinatorDashboard: React.FC = () => {
                       <div className="flex items-center justify-between pt-3 border-t border-purple-200">
                         <div className="flex items-center text-xs text-gray-600">
                           <UserGroupIcon className="h-4 w-4 text-purple-600 mr-1" />
-                          <span>{job.application_count} applications</span>
+                          <span>
+                            {job.application_limit 
+                              ? `${job.application_count}/${job.application_limit} applications`
+                              : `${job.application_count} applications`
+                            }
+                          </span>
                         </div>
                         <Link
                           to={`/jobs/${job.id}`}

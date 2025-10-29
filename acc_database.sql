@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Oct 23, 2025 at 07:25 PM
+-- Generation Time: Oct 29, 2025 at 05:47 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -95,13 +95,33 @@ CREATE TABLE `applicant_ratings` (
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- --------------------------------------------------------
+
 --
--- Dumping data for table `applicant_ratings`
+-- Table structure for table `application_actions`
 --
 
-INSERT INTO `applicant_ratings` (`id`, `application_id`, `rated_by_type`, `rated_by_id`, `rating`, `comment`, `created_at`, `updated_at`) VALUES
-(1, 1, 'coordinator', 1, 4.0, 'This is the one', '2025-10-22 10:35:21', '2025-10-22 10:35:21'),
-(2, 2, 'company', 3, 5.0, 'shiiish', '2025-10-23 05:33:29', '2025-10-23 05:33:29');
+CREATE TABLE `application_actions` (
+  `id` int(11) NOT NULL,
+  `application_id` int(11) NOT NULL,
+  `action_type` enum('accepted','rejected','hired','interview_scheduled') NOT NULL,
+  `action_by_type` enum('coordinator','company') NOT NULL,
+  `action_by_id` int(11) NOT NULL,
+  `action_by_name` varchar(255) NOT NULL,
+  `reason` text DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `email_sent` tinyint(1) DEFAULT 0,
+  `auto_delete_date` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `application_actions`
+--
+
+INSERT INTO `application_actions` (`id`, `application_id`, `action_type`, `action_by_type`, `action_by_id`, `action_by_name`, `reason`, `notes`, `email_sent`, `auto_delete_date`, `created_at`) VALUES
+(9, 3, 'accepted', 'company', 3, 'Company Corporation', NULL, 'Bring envelope of your requirements', 1, NULL, '2025-10-28 15:53:19'),
+(10, 3, 'hired', 'company', 3, 'Company Corporation', NULL, 'Congratulations, you start on Wednesday 9:00 am, same location meet up.', 1, NULL, '2025-10-28 15:55:34');
 
 -- --------------------------------------------------------
 
@@ -298,8 +318,8 @@ CREATE TABLE `company_profiles` (
 --
 
 INSERT INTO `company_profiles` (`id`, `company_id`, `company_name`, `business_summary`, `key_requirements`, `company_logo`, `profile_completed`, `created_at`, `updated_at`, `first_name`, `last_name`, `contact_number`, `company_address`, `profile_type`, `profile_photo`, `average_rating`, `rating_count`) VALUES
-(1, 3, 'Company Corporation', 'We are a newbie company designed to integrate web and coding', NULL, NULL, 1, '2025-10-22 03:40:48', '2025-10-23 06:48:58', NULL, NULL, '09609167874', 'Hawaiin Street, Sampaloc, Manila', 'company', 'uploads/profiles/company_3_1761104448321.webp', 5.00, 1),
-(2, 4, 'Samsung Corporation', 'We are famous for creating gadgets and digital devices for your everyday use.', NULL, NULL, 1, '2025-10-23 16:45:14', '2025-10-23 16:46:32', NULL, NULL, '09609167874', 'Romania, Russia', 'company', 'uploads/profiles/company_4_1761237914806.webp', NULL, 0);
+(1, 3, 'Company Corporation', 'We are a newbie company designed to integrate web and coding', NULL, NULL, 1, '2025-10-22 03:40:48', '2025-10-26 09:21:51', NULL, NULL, '09609167874', 'Hawaiin Street, Sampaloc, Manila', 'company', 'uploads/profiles/company_3_1761104448321.webp', 5.00, 1),
+(2, 4, 'Samsung Corporation', 'We are famous for creating gadgets and digital devices for your everyday use.', NULL, NULL, 1, '2025-10-23 16:45:14', '2025-10-26 09:21:51', NULL, NULL, '09609167874', 'Romania, Russia', 'company', 'uploads/profiles/company_4_1761237914806.webp', NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -383,8 +403,8 @@ CREATE TABLE `coordinator_profiles` (
 --
 
 INSERT INTO `coordinator_profiles` (`id`, `coordinator_id`, `first_name`, `last_name`, `designated_course`, `contact_number`, `age`, `birthdate`, `gender`, `profile_photo`, `is_profile_complete`, `created_at`, `updated_at`, `average_rating`, `rating_count`) VALUES
-(1, 1, 'Rasel', 'Maraña', 'Bachelor in Science of Information Technology', '09609167874', 21, '2025-03-02', 'male', 'http://localhost:5000/api/uploads/profiles/coordinator_1_1759990398985.webp', 1, '2025-10-09 06:13:38', '2025-10-23 06:41:20', 5.00, 1),
-(2, 2, 'Rozaida ', 'Tuazon', 'Bachelor in Science of Computer Science', '09609167874', 30, '1990-07-24', 'female', 'http://localhost:5000/api/uploads/profiles/coordinator_2_1761236117917.webp', 1, '2025-10-23 16:16:09', '2025-10-23 16:16:09', NULL, 0);
+(1, 1, 'Rasel', 'Maraña', 'Bachelor in Science of Information Technology', '09609167874', 21, '2025-03-02', 'male', 'uploads/profiles/coordinator_1_1759990398985.webp', 1, '2025-10-09 06:13:38', '2025-10-26 09:21:46', 5.00, 1),
+(2, 2, 'Rozaida ', 'Tuazon', 'Bachelor in Science of Computer Science', '09609167874', 30, '1990-07-24', 'female', 'uploads/profiles/coordinator_2_1761236117917.webp', 1, '2025-10-23 16:16:09', '2025-10-26 09:21:46', NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -493,7 +513,74 @@ INSERT INTO `email_notifications` (`id`, `recipient_email`, `subject`, `body`, `
 (24, 'd.i.g.oschris.ti.a.n.n@gmail.com', 'Invitation to Join ACC Career Connect Platform - Bachelor in Science of Computer Science', '\n      <!DOCTYPE html>\n      <html>\n      <head>\n        <meta charset=\"UTF-8\">\n        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n        <title>Company Invitation - ACC Career Connect</title>\n        <style>\n          body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }\n          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }\n          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; text-align: center; }\n          .content { padding: 30px; }\n          .message-box { background-color: #f8f9fa; border-left: 4px solid #007bff; padding: 20px; margin: 20px 0; }\n          .coordinator-info { background-color: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0; }\n          .button { \n            display: inline-block; \n            padding: 15px 30px; \n            background-color: #007bff; \n            color: white; \n            text-decoration: none; \n            border-radius: 5px; \n            margin: 20px 0; \n            font-weight: bold; \n          }\n          .code-info { background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 15px 0; }\n          .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 12px; color: #666; }\n          .expiry-notice { background-color: #f8d7da; border: 1px solid #f1c2c2; padding: 10px; border-radius: 5px; margin: 15px 0; }\n        </style>\n      </head>\n      <body>\n        <div class=\"container\">\n          <div class=\"header\">\n            <h1>🎓 ACC Career Connect</h1>\n            <h2>Company Partnership Invitation</h2>\n          </div>\n          \n          <div class=\"content\">\n            <h3>Dear Company Representative,</h3>\n            \n            <p>You have been invited to join the ACC Career Connect platform as a company partner!</p>\n            \n            <div class=\"coordinator-info\">\n              <h4>📧 Invitation From:</h4>\n              <p><strong>Coordinator:</strong> Rozaida  Tuazon</p>\n              <p><strong>Email:</strong> te.rrymco.r.w.i.n.64@gmail.com</p>\n              <p><strong>Course/Department:</strong> Bachelor in Science of Computer Science</p>\n            </div>\n            \n            <div class=\"message-box\">\n              <h4>💌 Personal Message:</h4>\n              <p style=\"font-style: italic; line-height: 1.6;\">\"Hi We are inviting you\"</p>\n            </div>\n            \n            <h4>🚀 What You Can Do:</h4>\n            <ul style=\"line-height: 1.8;\">\n              <li><strong>Post Job Opportunities:</strong> Share internship, part-time, and full-time positions</li>\n              <li><strong>Access Talented Candidates:</strong> Connect with skilled students and alumni</li>\n              <li><strong>Review Applications:</strong> Manage applications with our comprehensive tools</li>\n              <li><strong>Build Your Team:</strong> Find the right talent for your company</li>\n            </ul>\n            \n            <div class=\"code-info\">\n              <h4>🔑 Your Invitation Details:</h4>\n              <p><strong>Invitation Code:</strong> <code>23958277</code></p>\n              <p><strong>Invited Email:</strong> d.i.g.oschris.ti.a.n.n@gmail.com</p>\n              <p><em>You\'ll need this code during registration to verify your invitation.</em></p>\n            </div>\n            \n            <div style=\"text-align: center;\">\n              <a href=\"http://localhost:5173/register?token=23958277\" class=\"button\">🎯 Join ACC Career Connect Now</a>\n            </div>\n            \n            <div class=\"expiry-notice\">\n              <p><strong>⏰ Important:</strong> This invitation expires on <strong>10/31/2025</strong>. Please register before this date.</p>\n            </div>\n            \n            <h4>📋 How to Register:</h4>\n            <ol style=\"line-height: 1.8;\">\n              <li>Click the registration button above</li>\n              <li>Select \"Company/Business Owner\" during registration</li>\n              <li>Use your invitation code: <strong>23958277</strong></li>\n              <li>Complete your company profile</li>\n              <li>Start posting jobs and finding talent!</li>\n            </ol>\n            \n            <p>If you have any questions or need assistance, please don\'t hesitate to contact the coordinator directly at <a href=\"mailto:te.rrymco.r.w.i.n.64@gmail.com\">te.rrymco.r.w.i.n.64@gmail.com</a>.</p>\n            \n            <p>We look forward to having you as a partner in connecting students with great career opportunities!</p>\n            \n            <p>Best regards,<br>\n            <strong>ACC Career Connect Team</strong><br>\n            <em>Asiatech College Career Platform</em></p>\n          </div>\n          \n          <div class=\"footer\">\n            <p>© 2025 ACC Career Connect. All rights reserved.</p>\n            <p>This invitation was sent by Rozaida  Tuazon (te.rrymco.r.w.i.n.64@gmail.com)</p>\n            <p>If you received this email by mistake, please ignore it.</p>\n          </div>\n        </div>\n      </body>\n      </html>\n    ', 'invitation', '2025-10-23 16:40:04', 1, NULL),
 (25, 'd.i.g.oschris.ti.a.n.n@gmail.com', 'Your ACC Verification Code', '\n      <!DOCTYPE html>\n      <html>\n      <head>\n        <meta charset=\"utf-8\">\n        <style>\n          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n          .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }\n          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }\n          .otp-box { background: white; border: 2px solid #16a34a; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }\n          .otp-code { font-size: 32px; font-weight: bold; color: #16a34a; letter-spacing: 5px; }\n          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }\n        </style>\n      </head>\n      <body>\n        <div class=\"container\">\n          <div class=\"header\">\n            <h1>ACC Career Connect</h1>\n            <p>Asiatech Career Connect</p>\n          </div>\n          <div class=\"content\">\n            <h2>Verification Code</h2>\n            <p>Your verification code for company registration is:</p>\n            <div class=\"otp-box\">\n              <div class=\"otp-code\">399571</div>\n            </div>\n            <p><strong>This code will expire in 10 minutes.</strong></p>\n            <p>If you didn\'t request this code, please ignore this email.</p>\n          </div>\n          <div class=\"footer\">\n            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>\n          </div>\n        </div>\n      </body>\n      </html>\n    ', 'otp', '2025-10-23 16:43:29', 1, NULL),
 (26, 'd.i.g.oschris.ti.a.n.n@gmail.com', 'Welcome to Asiatech Career Connect!', '\n      <!DOCTYPE html>\n      <html>\n      <head>\n        <meta charset=\"utf-8\">\n        <style>\n          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n          .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }\n          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }\n          .btn { display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin: 20px 0; }\n          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }\n        </style>\n      </head>\n      <body>\n        <div class=\"container\">\n          <div class=\"header\">\n            <h1>Welcome to ACC!</h1>\n            <p>Asiatech Career Connect</p>\n          </div>\n          <div class=\"content\">\n            <h2>Hello d.i.g.oschris.ti.a.n.n!</h2>\n            <p>Welcome to Asiatech Career Connect! We\'re excited to have you join our platform as a company.</p>\n            <p>ACC is designed to make job finding easier for OJT college students and alumni. Our platform connects students with opportunities that match their skills and career goals.</p>\n            <p>Get started by completing your profile and exploring the available opportunities.</p>\n            <a href=\"http://localhost:5173\" class=\"btn\">Start Exploring</a>\n          </div>\n          <div class=\"footer\">\n            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>\n          </div>\n        </div>\n      </body>\n      </html>\n    ', 'general', '2025-10-23 16:44:22', 1, NULL),
-(27, '1-220043@asiatech.edu.ph', 'Your ACC Verification Code', '\n      <!DOCTYPE html>\n      <html>\n      <head>\n        <meta charset=\"utf-8\">\n        <style>\n          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n          .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }\n          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }\n          .otp-box { background: white; border: 2px solid #16a34a; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }\n          .otp-code { font-size: 32px; font-weight: bold; color: #16a34a; letter-spacing: 5px; }\n          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }\n        </style>\n      </head>\n      <body>\n        <div class=\"container\">\n          <div class=\"header\">\n            <h1>ACC Career Connect</h1>\n            <p>Asiatech Career Connect</p>\n          </div>\n          <div class=\"content\">\n            <h2>Verification Code</h2>\n            <p>Your verification code for registration is:</p>\n            <div class=\"otp-box\">\n              <div class=\"otp-code\">175582</div>\n            </div>\n            <p><strong>This code will expire in 10 minutes.</strong></p>\n            <p>If you didn\'t request this code, please ignore this email.</p>\n          </div>\n          <div class=\"footer\">\n            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>\n          </div>\n        </div>\n      </body>\n      </html>\n    ', 'otp', '2025-10-23 17:17:05', 1, NULL);
+(27, '1-220043@asiatech.edu.ph', 'Your ACC Verification Code', '\n      <!DOCTYPE html>\n      <html>\n      <head>\n        <meta charset=\"utf-8\">\n        <style>\n          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }\n          .container { max-width: 600px; margin: 0 auto; padding: 20px; }\n          .header { background: #16a34a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }\n          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }\n          .otp-box { background: white; border: 2px solid #16a34a; padding: 20px; text-align: center; border-radius: 8px; margin: 20px 0; }\n          .otp-code { font-size: 32px; font-weight: bold; color: #16a34a; letter-spacing: 5px; }\n          .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }\n        </style>\n      </head>\n      <body>\n        <div class=\"container\">\n          <div class=\"header\">\n            <h1>ACC Career Connect</h1>\n            <p>Asiatech Career Connect</p>\n          </div>\n          <div class=\"content\">\n            <h2>Verification Code</h2>\n            <p>Your verification code for registration is:</p>\n            <div class=\"otp-box\">\n              <div class=\"otp-code\">175582</div>\n            </div>\n            <p><strong>This code will expire in 10 minutes.</strong></p>\n            <p>If you didn\'t request this code, please ignore this email.</p>\n          </div>\n          <div class=\"footer\">\n            <p>© 2024 Asiatech Career Connect. All rights reserved.</p>\n          </div>\n        </div>\n      </body>\n      </html>\n    ', 'otp', '2025-10-23 17:17:05', 1, NULL),
+(28, '1-220471@asiatech.edu.ph', 'Congratulations! Your Application Has Been Accepted - Interview Scheduled', '<h2>Congratulations, Rasel Maraña!</h2><p>We are pleased to inform you that your application for <strong>Web Developer Intern</strong> at <strong>Company Corporation</strong> has been accepted.</p><h3>Interview Details:</h3><ul><li><strong>Date & Time:</strong> 11/5/2025, 10:00:00 AM</li><li><strong>Mode:</strong> onsite</li><li><strong>Location/Link:</strong> Celina Plains, Phase 2</li></ul><h4>Additional Notes:</h4><p>Bring envelope of your requirements</p><p>We look forward to meeting you!</p><p>Best regards,<br>Company Corporation</p>', '', '2025-10-28 15:53:22', 1, NULL),
+(29, '1-220471@asiatech.edu.ph', 'Congratulations! You Have Been Hired - Web Developer Intern', '<h2>Congratulations, Rasel Maraña!</h2><p>We are excited to inform you that you have been selected for the position of <strong>Web Developer Intern</strong> at <strong>Company Corporation</strong>.</p><h4>Next Steps:</h4><p>Congratulations, you start on Wednesday 9:00 am, same location meet up.</p><p>Welcome to the team!</p><p>Best regards,<br>Company Corporation</p>', '', '2025-10-28 15:55:37', 1, NULL),
+(30, '1-220026@asiatech.edu.ph', 'Your OTP Code for registration', '\n        <h2>Email Verification</h2>\n        <p>Your OTP code for registration is:</p>\n        <div style=\"background: #f3f4f6; padding: 20px; text-align: center; margin: 20px 0;\">\n          <h1 style=\"color: #16a34a; font-size: 32px; letter-spacing: 8px; margin: 0;\">131584</h1>\n        </div>\n        <p>This code will expire in 10 minutes.</p>\n        <p>If you didn\'t request this, please ignore this email.</p>\n      ', '', '2025-10-29 05:55:36', 1, NULL),
+(31, '1-220026@asiatech.edu.ph', 'Welcome to Asiatech Career Center!', '\n        <h2>Welcome to Asiatech Career Center, 1-220026!</h2>\n        <p>Your user account has been successfully created.</p>\n        <p>You can now log in and start exploring opportunities.</p>\n        <p>Best regards,<br>Asiatech Career Center Team</p>\n      ', '', '2025-10-29 05:57:01', 1, NULL);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `email_templates`
+--
+
+CREATE TABLE `email_templates` (
+  `id` int(11) NOT NULL,
+  `template_name` varchar(100) NOT NULL,
+  `subject` varchar(255) NOT NULL,
+  `body_html` text NOT NULL,
+  `body_text` text NOT NULL,
+  `variables` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`variables`)),
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `email_templates`
+--
+
+INSERT INTO `email_templates` (`id`, `template_name`, `subject`, `body_html`, `body_text`, `variables`, `created_at`, `updated_at`) VALUES
+(1, 'application_accepted', 'Congratulations! Your Application Has Been Accepted - Interview Scheduled', '<h2>Congratulations, {applicant_name}!</h2><p>We are pleased to inform you that your application for <strong>{job_title}</strong> at <strong>{company_name}</strong> has been accepted.</p><h3>Interview Details:</h3><ul><li><strong>Date & Time:</strong> {interview_date}</li><li><strong>Mode:</strong> {interview_mode}</li><li><strong>Location/Link:</strong> {interview_location_link}</li></ul>{notes_section}<p>We look forward to meeting you!</p><p>Best regards,<br>{company_name}</p>', 'Congratulations {applicant_name}! Your application for {job_title} at {company_name} has been accepted. Interview scheduled for {interview_date} - {interview_mode}. Location/Link: {interview_location_link}. {notes_text}', NULL, '2025-10-27 11:39:23', '2025-10-27 11:39:23'),
+(2, 'application_rejected', 'Application Status Update - {job_title}', '<h2>Thank you for your interest, {applicant_name}</h2><p>We regret to inform you that your application for <strong>{job_title}</strong> at <strong>{company_name}</strong> has not been selected to move forward.</p>{reason_section}<p>We encourage you to apply for future opportunities that match your skills and experience.</p><p>Best regards,<br>{company_name}</p>', 'Thank you for your interest {applicant_name}. Your application for {job_title} at {company_name} has not been selected. {reason_text}', NULL, '2025-10-27 11:39:36', '2025-10-27 11:39:36'),
+(3, 'applicant_hired', 'Congratulations! You Have Been Hired - {job_title}', '<h2>Congratulations, {applicant_name}!</h2><p>We are excited to inform you that you have been selected for the position of <strong>{job_title}</strong> at <strong>{company_name}</strong>.</p>{details_section}<p>Welcome to the team!</p><p>Best regards,<br>{company_name}</p>', 'Congratulations {applicant_name}! You have been hired for {job_title} at {company_name}. {details_text}', NULL, '2025-10-27 11:39:36', '2025-10-27 11:39:36'),
+(4, 'interview_reminder_1week', 'Interview Reminder - {job_title} in 1 Week', '<h2>Interview Reminder</h2><p>Hello {applicant_name},</p><p>This is a friendly reminder that you have an interview scheduled for <strong>{job_title}</strong> at <strong>{company_name}</strong> in one week.</p><p><strong>Interview Details:</strong><br>Date & Time: {interview_date}<br>Mode: {interview_mode}<br>Location/Link: {interview_location_link}</p>', 'Interview Reminder: {job_title} at {company_name} in 1 week. Date: {interview_date}, Mode: {interview_mode}', NULL, '2025-10-27 11:39:47', '2025-10-27 11:39:47'),
+(5, 'interview_reminder_1day', 'Interview Tomorrow - {job_title}', '<h2>Interview Tomorrow!</h2><p>Hello {applicant_name},</p><p>Your interview for <strong>{job_title}</strong> at <strong>{company_name}</strong> is scheduled for tomorrow.</p><p><strong>Interview Details:</strong><br>Date & Time: {interview_date}<br>Mode: {interview_mode}<br>Location/Link: {interview_location_link}</p>', 'Interview Tomorrow: {job_title} at {company_name}. Date: {interview_date}, Mode: {interview_mode}', NULL, '2025-10-27 11:39:47', '2025-10-27 11:39:47'),
+(6, 'interview_reminder_1hour', 'Interview in 1 Hour - {job_title}', '<h2>Interview Starting Soon!</h2><p>Hello {applicant_name},</p><p>Your interview for <strong>{job_title}</strong> at <strong>{company_name}</strong> starts in 1 hour.</p><p><strong>Interview Details:</strong><br>Date & Time: {interview_date}<br>Mode: {interview_mode}<br>Location/Link: {interview_location_link}</p>', 'Interview in 1 hour: {job_title} at {company_name}. Date: {interview_date}, Mode: {interview_mode}', NULL, '2025-10-27 11:39:47', '2025-10-27 11:39:47'),
+(7, 'post_interview_rejected', 'Interview Follow-up - {job_title}', '<h2>Thank you for interviewing with us, {applicant_name}</h2><p>We appreciate the time you took to interview for the <strong>{job_title}</strong> position at <strong>{company_name}</strong>.</p><p>After careful consideration, we have decided to move forward with another candidate.</p>{feedback_section}<p>We wish you the best in your job search.</p><p>Best regards,<br>{company_name}</p>', 'Thank you for interviewing {applicant_name}. We have decided to move forward with another candidate for {job_title} at {company_name}. {feedback_text}', NULL, '2025-10-27 11:39:58', '2025-10-27 11:39:58');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `interviews`
+--
+
+CREATE TABLE `interviews` (
+  `id` int(11) NOT NULL,
+  `application_id` int(11) NOT NULL,
+  `job_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `scheduled_by_type` enum('coordinator','company') NOT NULL,
+  `scheduled_by_id` int(11) NOT NULL,
+  `interview_date` datetime NOT NULL,
+  `interview_mode` enum('onsite','online') NOT NULL,
+  `interview_location` varchar(500) DEFAULT NULL,
+  `interview_link` varchar(500) DEFAULT NULL,
+  `notes` text DEFAULT NULL,
+  `status` enum('scheduled','completed','cancelled','no_show') DEFAULT 'scheduled',
+  `reminder_1week_sent` tinyint(1) DEFAULT 0,
+  `reminder_1day_sent` tinyint(1) DEFAULT 0,
+  `reminder_1hour_sent` tinyint(1) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `interviews`
+--
+
+INSERT INTO `interviews` (`id`, `application_id`, `job_id`, `user_id`, `scheduled_by_type`, `scheduled_by_id`, `interview_date`, `interview_mode`, `interview_location`, `interview_link`, `notes`, `status`, `reminder_1week_sent`, `reminder_1day_sent`, `reminder_1hour_sent`, `created_at`, `updated_at`) VALUES
+(8, 3, 2, 2, 'company', 3, '2025-11-05 10:00:00', 'onsite', 'Celina Plains, Phase 2', NULL, 'Bring envelope of your requirements', 'completed', 0, 0, 0, '2025-10-28 15:53:19', '2025-10-28 15:54:40');
 
 -- --------------------------------------------------------
 
@@ -517,6 +604,7 @@ CREATE TABLE `jobs` (
   `company_name` varchar(255) DEFAULT NULL,
   `application_deadline` date DEFAULT NULL,
   `positions_available` int(11) DEFAULT 1,
+  `application_limit` int(11) DEFAULT NULL COMMENT 'Maximum number of applications allowed for this job. NULL means no limit.',
   `experience_level` enum('entry-level','mid-level','senior-level','executive') DEFAULT 'entry-level',
   `target_student_type` enum('ojt','graduated','both') DEFAULT 'both',
   `created_by_type` enum('coordinator','company') NOT NULL,
@@ -536,11 +624,12 @@ CREATE TABLE `jobs` (
 -- Dumping data for table `jobs`
 --
 
-INSERT INTO `jobs` (`id`, `title`, `location`, `category`, `work_type`, `work_arrangement`, `currency`, `min_salary`, `max_salary`, `description`, `summary`, `video_url`, `company_name`, `application_deadline`, `positions_available`, `experience_level`, `target_student_type`, `created_by_type`, `created_by_id`, `coordinator_name`, `business_owner_name`, `status`, `is_featured`, `created_at`, `updated_at`, `filter_pre_screening`, `average_rating`, `rating_count`) VALUES
-(1, 'IT Debugger', 'San Pablo, Ilocos Sur', 'IT Support / Technical Support', 'full-time', 'on-site', 'PHP', 20000.00, 30000.00, 'We are', 'BDO', NULL, NULL, '2025-11-27', 4, 'mid-level', 'both', 'coordinator', 1, 'Rasel Maraña', NULL, 'active', 0, '2025-10-09 11:02:26', '2025-10-09 11:02:26', 0, NULL, 0),
-(2, 'Web Developer Intern', 'Quezon City, Metro Manila', 'Web and Mobile App Development', 'internship', 'on-site', 'PHP', 15000.00, 25000.00, 'We are looking for a motivated Web Developer Intern to join our team. You will work on developing and maintaining web applications using modern technologies. This is a great opportunity to gain hands-on experience in web development and learn from experienced developers.\n\nResponsibilities:\n- Develop and maintain web applications\n- Write clean, maintainable code\n- Collaborate with team members\n- Participate in code reviews\n- Learn new technologies and best practices\n\nRequirements:\n- Currently pursuing BS Computer Science or related field\n- Basic knowledge of HTML, CSS, and JavaScript\n- Familiarity with React or Vue.js is a plus\n- Good communication skills\n- Eager to learn and grow', 'Join our team as a Web Developer Intern and gain hands-on experience with modern web technologies including React, Node.js, and TypeScript.', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', NULL, '2025-12-31', 1, 'entry-level', 'ojt', 'company', 3, NULL, NULL, 'active', 0, '2025-10-22 04:25:18', '2025-10-23 08:12:19', 0, 5.00, 1),
-(3, 'AI debugger', 'Roseville, Cabuyao, Laguna', 'Artificial Intelligence / Machine Learning', 'full-time', 'on-site', 'PHP', 10000.00, 50000.00, 'We are in need of a professional AI debugger here in Asiatech.', 'We are offering experience and a chance to join Google Company if you prove to us this job.', NULL, NULL, '2026-01-22', 5, 'entry-level', 'both', 'coordinator', 2, 'Rozaida Tuazon', NULL, 'active', 0, '2025-10-23 16:29:24', '2025-10-23 16:29:24', 0, NULL, 0),
-(4, 'Android debugger', 'Samsung building 21th street, BGC, Makati, Metro Manila', 'Software Development / Programming', 'part-time', 'remote', 'PHP', 40000.00, 79998.00, 'Hello, We are hiring applicants all over the world for our next samsung phone.', 'We are giving you the opportunity to work with us in your early age, which is what we need.', NULL, NULL, '2026-01-27', 4, 'entry-level', 'both', 'company', 4, NULL, NULL, 'active', 0, '2025-10-23 16:52:51', '2025-10-23 16:52:51', 0, NULL, 0);
+INSERT INTO `jobs` (`id`, `title`, `location`, `category`, `work_type`, `work_arrangement`, `currency`, `min_salary`, `max_salary`, `description`, `summary`, `video_url`, `company_name`, `application_deadline`, `positions_available`, `application_limit`, `experience_level`, `target_student_type`, `created_by_type`, `created_by_id`, `coordinator_name`, `business_owner_name`, `status`, `is_featured`, `created_at`, `updated_at`, `filter_pre_screening`, `average_rating`, `rating_count`) VALUES
+(1, 'IT Debugger', 'San Pablo, Ilocos Sur', 'IT Support / Technical Support', 'full-time', 'on-site', 'PHP', 20000.00, 30000.00, 'We are', 'BDO', NULL, NULL, '2025-11-27', 4, 50, 'mid-level', 'both', 'coordinator', 1, 'Rasel Maraña', NULL, 'active', 0, '2025-10-09 11:02:26', '2025-10-26 07:26:15', 0, NULL, 0),
+(2, 'Web Developer Intern', 'Quezon City, Metro Manila', 'Web and Mobile App Development', 'internship', 'on-site', 'PHP', 15000.00, 25000.00, 'We are looking for a motivated Web Developer Intern to join our team. You will work on developing and maintaining web applications using modern technologies. This is a great opportunity to gain hands-on experience in web development and learn from experienced developers.\n\nResponsibilities:\n- Develop and maintain web applications\n- Write clean, maintainable code\n- Collaborate with team members\n- Participate in code reviews\n- Learn new technologies and best practices\n\nRequirements:\n- Currently pursuing BS Computer Science or related field\n- Basic knowledge of HTML, CSS, and JavaScript\n- Familiarity with React or Vue.js is a plus\n- Good communication skills\n- Eager to learn and grow', 'Join our team as a Web Developer Intern and gain hands-on experience with modern web technologies including React, Node.js, and TypeScript.', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', NULL, '2025-12-31', 1, NULL, 'entry-level', 'ojt', 'company', 3, NULL, NULL, 'active', 0, '2025-10-22 04:25:18', '2025-10-23 08:12:19', 0, 5.00, 1),
+(3, 'AI debugger', 'Roseville, Cabuyao, Laguna', 'Artificial Intelligence / Machine Learning', 'full-time', 'on-site', 'PHP', 10000.00, 50000.00, 'We are in need of a professional AI debugger here in Asiatech.', 'We are offering experience and a chance to join Google Company if you prove to us this job.', NULL, NULL, '2026-01-22', 5, NULL, 'entry-level', 'both', 'coordinator', 2, 'Rozaida Tuazon', NULL, 'active', 0, '2025-10-23 16:29:24', '2025-10-23 16:29:24', 0, NULL, 0),
+(4, 'Android debugger', 'Samsung building 21th street, BGC, Makati, Metro Manila', 'Software Development / Programming', 'part-time', 'remote', 'PHP', 40000.00, 79998.00, 'Hello, We are hiring applicants all over the world for our next samsung phone.', 'We are giving you the opportunity to work with us in your early age, which is what we need.', NULL, NULL, '2026-01-27', 4, NULL, 'entry-level', 'both', 'company', 4, NULL, NULL, 'active', 0, '2025-10-23 16:52:51', '2025-10-23 16:52:51', 0, NULL, 0),
+(5, 'Website Developer', 'BGC, Makati, Metro Manila', 'Web Development', 'full-time', 'remote', 'PHP', 10000.00, 20000.00, 'This is my personal business, and I am creating a team dedicated and capable of creating system websites.', 'I am creating a website devs company', NULL, NULL, '2026-03-29', 4, 50, 'entry-level', 'both', 'coordinator', 1, NULL, NULL, 'active', 0, '2025-10-29 09:13:31', '2025-10-29 09:13:31', 0, NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -562,22 +651,27 @@ CREATE TABLE `job_applications` (
   `resume_file` varchar(500) DEFAULT NULL,
   `resume_builder_link` varchar(500) DEFAULT NULL,
   `interview_video` varchar(500) DEFAULT NULL,
-  `status` enum('pending','under_review','qualified','rejected','hired') DEFAULT 'pending',
+  `status` enum('pending','under_review','qualified','rejected','accepted','interview_scheduled','interview_completed','pending_review','hired') NOT NULL DEFAULT 'pending',
   `ats_score` decimal(5,2) DEFAULT NULL,
   `average_rating` decimal(3,2) DEFAULT NULL,
   `rating_count` int(11) DEFAULT 0,
   `is_ats_processed` tinyint(1) DEFAULT 0,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `scheduled_interview_date` datetime DEFAULT NULL,
+  `interview_id` int(11) DEFAULT NULL,
+  `auto_delete_date` datetime DEFAULT NULL,
+  `rejection_reason` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `job_applications`
 --
 
-INSERT INTO `job_applications` (`id`, `job_id`, `user_id`, `first_name`, `last_name`, `email`, `phone`, `address`, `position_applying_for`, `resume_type`, `resume_file`, `resume_builder_link`, `interview_video`, `status`, `ats_score`, `average_rating`, `rating_count`, `is_ats_processed`, `created_at`, `updated_at`) VALUES
-(1, 1, 2, 'Rasel', 'Maraña', '1-220471@asiatech.edu.ph', '09609167874', 'Celina Plains, Phase 1, Block 7, Lot 8/ Santa Rosa/ Laguna', 'IT Debugger', 'uploaded', 'resumeFile-1760020666267-122152446.pdf', NULL, NULL, 'pending', NULL, 4.00, 1, 0, '2025-10-09 14:37:46', '2025-10-22 10:35:21'),
-(2, 2, 2, 'Rasel', 'Maraña', '1-220471@asiatech.edu.ph', '09609167874', 'Celina Plains Phase 1', 'Web Developer Intern', 'uploaded', 'resumeFile-1761116115985-791693159.pdf', NULL, NULL, 'under_review', NULL, 5.00, 1, 0, '2025-10-22 06:55:15', '2025-10-23 05:33:29');
+INSERT INTO `job_applications` (`id`, `job_id`, `user_id`, `first_name`, `last_name`, `email`, `phone`, `address`, `position_applying_for`, `resume_type`, `resume_file`, `resume_builder_link`, `interview_video`, `status`, `ats_score`, `average_rating`, `rating_count`, `is_ats_processed`, `created_at`, `updated_at`, `scheduled_interview_date`, `interview_id`, `auto_delete_date`, `rejection_reason`) VALUES
+(3, 2, 2, 'Rasel', 'Maraña', '1-220471@asiatech.edu.ph', '09609167874', 'Celina Plains, Phase 1, Block 7, Lot 8', 'Web Developer Intern', 'uploaded', 'resumeFile-1761666393956-477148012.pdf', NULL, NULL, 'hired', NULL, NULL, 0, 0, '2025-10-28 15:46:33', '2025-10-28 15:55:34', '2025-11-05 10:00:00', 8, NULL, NULL),
+(6, 4, 5, 'James', 'Malibago', '1-220026@asiatech.edu.ph', '09383541664', '123 Main Street', 'Android debugger', 'uploaded', 'resumeFile-1761718302759-554815473.pdf', NULL, NULL, 'pending', NULL, NULL, 0, 0, '2025-10-29 06:11:42', '2025-10-29 06:11:42', NULL, NULL, NULL, NULL),
+(7, 1, 2, 'Rasel', 'Maraña', '1-220471@asiatech.edu.ph', '09609167874', 'Celina Plains Phase 1, Block 7, Lot 8', 'IT Debugger', 'uploaded', 'resumeFile-1761723308000-36768764.pdf', NULL, NULL, 'pending', NULL, NULL, 0, 0, '2025-10-29 07:35:08', '2025-10-29 07:35:08', NULL, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -835,9 +929,6 @@ CREATE TABLE `job_screening_questions` (
 --
 
 INSERT INTO `job_screening_questions` (`id`, `job_id`, `question_text`, `question_type`, `options`, `is_required`, `order_index`, `created_at`, `acceptable_answers`, `min_salary_range`, `max_salary_range`, `is_filter_criteria`) VALUES
-(1, 1, 'What\'s your expected monthly basic salary range?', 'salary_range', NULL, 0, 0, '2025-10-09 11:02:26', NULL, NULL, NULL, 0),
-(2, 1, 'Which of the following types of qualifications do you have?', 'qualifications', '[\"High School Diploma\",\"National Certificate 1\",\"National Certificate 2\",\"National Certificate 3\",\"National Certificate 4\",\"Diploma\",\"Bachelor Degree\",\"Post Graduate Diploma\",\"Master Degree\",\"Doctoral Degree\"]', 0, 1, '2025-10-09 11:02:26', NULL, NULL, NULL, 0),
-(3, 1, 'How would you rate your English language skills?', 'english_skills', '[\"Speaks proficiently in a professional setting\",\"Writes proficiently in a professional setting\",\"Limited proficiency\"]', 0, 2, '2025-10-09 11:02:26', NULL, NULL, NULL, 0),
 (6, 2, 'How would you rate your English language skills?', 'english_skills', '[\"Speaks proficiently in a professional setting\",\"Writes proficiently in a professional setting\",\"Limited proficiency\"]', 0, 0, '2025-10-22 05:53:56', NULL, NULL, NULL, 0),
 (7, 2, 'Are you willing to undergo a pre-employment background check?', 'background_check', '[\"Yes\",\"No\"]', 0, 1, '2025-10-22 05:53:56', NULL, NULL, NULL, 0),
 (8, 3, 'Which of the following types of qualifications do you have?', 'qualifications', '[\"High School Diploma\",\"National Certificate 1\",\"National Certificate 2\",\"National Certificate 3\",\"National Certificate 4\",\"Diploma\",\"Bachelor Degree\",\"Post Graduate Diploma\",\"Master Degree\",\"Doctoral Degree\"]', 0, 0, '2025-10-23 16:29:24', NULL, NULL, NULL, 0),
@@ -846,7 +937,14 @@ INSERT INTO `job_screening_questions` (`id`, `job_id`, `question_text`, `questio
 (11, 4, 'Which of the following types of qualifications do you have?', 'qualifications', '[\"High School Diploma\",\"National Certificate 1\",\"National Certificate 2\",\"National Certificate 3\",\"National Certificate 4\",\"Diploma\",\"Bachelor Degree\",\"Post Graduate Diploma\",\"Master Degree\",\"Doctoral Degree\"]', 0, 0, '2025-10-23 16:52:51', NULL, NULL, NULL, 0),
 (12, 4, 'How would you rate your English language skills?', 'english_skills', '[\"Speaks proficiently in a professional setting\",\"Writes proficiently in a professional setting\",\"Limited proficiency\"]', 0, 1, '2025-10-23 16:52:51', NULL, NULL, NULL, 0),
 (13, 4, 'Do you have customer service experience?', 'customer_service', '[\"Yes\",\"No\"]', 0, 2, '2025-10-23 16:52:51', NULL, NULL, NULL, 0),
-(14, 4, 'How much notice are you required to give your current employer?', 'notice_period', '[\"None, I\'m ready to go now\",\"Less than 2 weeks\",\"1 month\",\"2 months\",\"3 months\",\"More than 3 months\"]', 0, 3, '2025-10-23 16:52:51', NULL, NULL, NULL, 0);
+(14, 4, 'How much notice are you required to give your current employer?', 'notice_period', '[\"None, I\'m ready to go now\",\"Less than 2 weeks\",\"1 month\",\"2 months\",\"3 months\",\"More than 3 months\"]', 0, 3, '2025-10-23 16:52:51', NULL, NULL, NULL, 0),
+(15, 1, 'What\'s your expected monthly basic salary range?', 'salary_range', NULL, 0, 0, '2025-10-26 07:26:15', NULL, NULL, NULL, 0),
+(16, 1, 'Which of the following types of qualifications do you have?', 'qualifications', '[\"High School Diploma\",\"National Certificate 1\",\"National Certificate 2\",\"National Certificate 3\",\"National Certificate 4\",\"Diploma\",\"Bachelor Degree\",\"Post Graduate Diploma\",\"Master Degree\",\"Doctoral Degree\"]', 0, 1, '2025-10-26 07:26:15', NULL, NULL, NULL, 0),
+(17, 1, 'How would you rate your English language skills?', 'english_skills', '[\"Speaks proficiently in a professional setting\",\"Writes proficiently in a professional setting\",\"Limited proficiency\"]', 0, 2, '2025-10-26 07:26:15', NULL, NULL, NULL, 0),
+(18, 5, 'What\'s your expected monthly basic salary range?', 'salary_range', NULL, 1, 0, '2025-10-29 09:13:31', NULL, NULL, NULL, 0),
+(19, 5, 'Which of the following types of qualifications do you have?', 'qualifications', '[\"High School Diploma\",\"National Certificate 1\",\"National Certificate 2\",\"National Certificate 3\",\"National Certificate 4\",\"Diploma\",\"Bachelor Degree\",\"Post Graduate Diploma\",\"Master Degree\",\"Doctoral Degree\"]', 0, 1, '2025-10-29 09:13:31', NULL, NULL, NULL, 0),
+(20, 5, 'How would you rate your English language skills?', 'english_skills', '[\"Speaks proficiently in a professional setting\",\"Writes proficiently in a professional setting\",\"Limited proficiency\"]', 0, 2, '2025-10-29 09:13:31', NULL, NULL, NULL, 0),
+(21, 5, 'Do you have customer service experience?', 'customer_service', '[\"Yes\",\"No\"]', 0, 3, '2025-10-29 09:13:31', NULL, NULL, NULL, 0);
 
 -- --------------------------------------------------------
 
@@ -869,16 +967,7 @@ CREATE TABLE `otp_verifications` (
 --
 
 INSERT INTO `otp_verifications` (`id`, `email`, `otp_code`, `purpose`, `expires_at`, `is_used`, `created_at`) VALUES
-(1, 'maranarasel19@gmail.com', '399700', 'registration', '2025-10-09 06:13:03', 1, '2025-10-09 06:12:45'),
-(2, '1-220471@asiatech.edu.ph', '847272', 'registration', '2025-10-09 13:35:04', 1, '2025-10-09 13:34:37'),
-(3, '1-220471@asiatech.edu.ph', '928190', 'registration', '2025-10-09 14:25:49', 1, '2025-10-09 14:25:09'),
-(4, 'raselmadrideomarana@gmail.com', '592974', 'registration', '2025-10-21 13:56:12', 1, '2025-10-21 13:55:55'),
-(5, 'raselmadrideomarana@gmail.com', '426397', 'registration', '2025-10-22 03:24:04', 1, '2025-10-22 03:23:40'),
-(6, 'raselmadrideomarana@gmail.com', '254955', 'registration', '2025-10-22 03:33:15', 1, '2025-10-22 03:33:02'),
-(7, '1-220443@asiatech.edu.ph', '292712', 'registration', '2025-10-23 15:01:24', 1, '2025-10-23 14:59:26'),
-(8, 'te.rrymco.r.w.i.n.64@gmail.com', '200743', 'registration', '2025-10-23 16:03:26', 1, '2025-10-23 16:02:46'),
-(9, 'd.i.g.oschris.ti.a.n.n@gmail.com', '399571', 'registration', '2025-10-23 16:44:16', 1, '2025-10-23 16:43:24'),
-(10, '1-220043@asiatech.edu.ph', '175582', 'registration', '2025-10-23 09:27:02', 0, '2025-10-23 17:17:02');
+(11, '1-220026@asiatech.edu.ph', '131584', 'registration', '2025-10-29 05:56:59', 1, '2025-10-29 05:55:33');
 
 -- --------------------------------------------------------
 
@@ -917,8 +1006,9 @@ CREATE TABLE `resumes` (
 --
 
 INSERT INTO `resumes` (`id`, `user_id`, `title`, `template_id`, `status`, `personal_info`, `professional_summary`, `work_experience`, `education`, `skills`, `websites_social_links`, `custom_sections`, `extracurricular_activities`, `hobbies`, `references`, `languages`, `font_family`, `paper_size`, `is_primary`, `download_count`, `last_downloaded`, `created_at`, `updated_at`) VALUES
-(5, 2, 'hell yeah', 'classic-with-photo', 'draft', '{\"firstName\":\"Rasel\",\"lastName\":\"Maraña\",\"email\":\"1-220471@asiatech.edu.ph\",\"phone\":\"09609167874\",\"address\":\"\",\"cityState\":\"\",\"country\":\"\",\"jobTitle\":\"\",\"profilePhotoUrl\":\"http://localhost:5000/api/uploads/profiles/user_2_1761116247141.webp\"}', '', '[]', '[]', '[]', '[]', '[]', '[]', '', '[]', '[]', 'times-new-roman', 'a4', 0, 6, '2025-10-22 08:11:45', '2025-10-22 06:51:41', '2025-10-22 08:11:45'),
-(6, 3, 'Android Software', 'classic-with-photo', 'completed', '{\"firstName\":\"Andrew\",\"lastName\":\"Mindoro\",\"email\":\"1-220443@asiatech.edu.ph\",\"phone\":\"09609167874\",\"address\":\"Olympia Phase 2, Barangay Labas\",\"cityState\":\"Santa Rosa/ Laguna\",\"country\":\"Philippines\",\"jobTitle\":\"Android Debugger\",\"profilePhotoUrl\":\"http://localhost:5000/api/uploads/profiles/user_3_1761238580177.webp\"}', '', '[{\"id\":1761238745616,\"jobTitle\":\"Landers Staff\",\"company\":\"Jomel Trinidad\",\"startDate\":\"11/2024\",\"endDate\":\"12/2024\",\"currentlyWorking\":false,\"city\":\"Nuvalli, Tagaytay, Cavite\",\"description\":\"I work there for 1 month as a stock clerk\"}]', '[]', '[]', '[]', '[]', '[]', '', '[]', '[]', 'times-new-roman', 'a4', 0, 1, '2025-10-23 17:00:51', '2025-10-23 16:55:29', '2025-10-23 17:01:44');
+(6, 3, 'Android Software', 'classic-with-photo', 'completed', '{\"firstName\":\"Andrew\",\"lastName\":\"Mindoro\",\"email\":\"1-220443@asiatech.edu.ph\",\"phone\":\"09609167874\",\"address\":\"Olympia Phase 2, Barangay Labas\",\"cityState\":\"Santa Rosa/ Laguna\",\"country\":\"Philippines\",\"jobTitle\":\"Android Debugger\",\"profilePhotoUrl\":\"http://localhost:5000/api/uploads/profiles/user_3_1761238580177.webp\"}', '', '[{\"id\":1761238745616,\"jobTitle\":\"Landers Staff\",\"company\":\"Jomel Trinidad\",\"startDate\":\"11/2024\",\"endDate\":\"12/2024\",\"currentlyWorking\":false,\"city\":\"Nuvalli, Tagaytay, Cavite\",\"description\":\"I work there for 1 month as a stock clerk\"}]', '[]', '[]', '[]', '[]', '[]', '', '[]', '[]', 'times-new-roman', 'a4', 0, 1, '2025-10-23 17:00:51', '2025-10-23 16:55:29', '2025-10-23 17:01:44'),
+(9, 2, 'BSIT', 'classic-with-photo', 'completed', '{\"firstName\":\"Rasel\",\"lastName\":\"Maraña\",\"email\":\"1-220471@asiatech.edu.ph\",\"phone\":\"09609167874\",\"address\":\"Celina Plains, Phase 1, Block 7, Lot 8\",\"cityState\":\"Santa Rosa/ Laguna\",\"country\":\"Philippines\",\"jobTitle\":\"Full stack web developer\",\"profilePhotoUrl\":\"http://localhost:5000/api/uploads/profiles/user_2_1761471632411.webp\"}', '', '[{\"id\":1761471727066,\"jobTitle\":\"Full stack developer\",\"company\":\"Socia\",\"startDate\":\"03/2025\",\"endDate\":\"04/2025\",\"currentlyWorking\":false,\"city\":\"BGC, Makati, Metro Manila\",\"description\":\"I have a certificate with a big company\"}]', '[{\"id\":1761471791986,\"school\":\"Asia Technological School of Science and Arts\",\"degree\":\"Bachelor in Science of Information Technology\",\"startDate\":\"03/2022\",\"endDate\":\"03/2026\",\"currentlyStudying\":false,\"city\":\"Dila, Dila, Santa Rosa Laguna\",\"description\":\"I have a college degree\"}]', '[{\"id\":1761471988699,\"name\":\"JavaScript\",\"level\":\"Experienced\"},{\"id\":1761472060492,\"name\":\"PHP\",\"level\":\"Expert\"},{\"id\":1761472066643,\"name\":\"CSS\",\"level\":\"Expert\"},{\"id\":1761472072716,\"name\":\"React\",\"level\":\"Expert\"}]', '[{\"id\":1761472123444,\"label\":\"Portfolio\",\"url\":\"http://raselm.site\"}]', '[]', '[]', '', '[]', '[]', 'times-new-roman', 'a4', 1, 3, '2025-10-28 14:51:50', '2025-10-26 09:40:18', '2025-10-28 14:51:50'),
+(10, 5, 'Malibago', 'classic-ats', 'completed', '{\"firstName\":\"James\",\"lastName\":\"Malibago\",\"email\":\"1-220026@asiatech.edu.ph\",\"phone\":\"09383541664\",\"address\":\"123 Main Street\",\"cityState\":\"Santa Rosa\",\"country\":\"Philippines\",\"jobTitle\":\"Tech Support\"}', '', '[{\"id\":1761717661984,\"jobTitle\":\"Reliever\",\"company\":\"One Green Arrow\",\"startDate\":\"01/2025\",\"endDate\":\"10/2025\",\"currentlyWorking\":false,\"city\":\"Santa Rosa\",\"description\":\"I\'m Broke\"}]', '[{\"id\":1761717790240,\"school\":\"Asiatech\",\"degree\":\"BS Information Technology\",\"startDate\":\"09/2022\",\"endDate\":\"06/2026\",\"currentlyStudying\":false,\"city\":\"Santa Rosa\",\"description\":\"Nakakamatay\"}]', '[{\"id\":1761717896944,\"name\":\"Excel, Microsoft Word, Programming, Design\",\"level\":\"Beginner\"}]', '[]', '[]', '[]', '', '[]', '[{\"id\":1761718173984,\"language\":\"English and Tagalog\",\"level\":\"Fluent\"}]', 'times-new-roman', 'a4', 0, 1, '2025-10-29 06:10:09', '2025-10-29 05:59:32', '2025-10-29 06:10:34');
 
 -- --------------------------------------------------------
 
@@ -946,7 +1036,8 @@ CREATE TABLE `users` (
 INSERT INTO `users` (`id`, `email`, `password_hash`, `role`, `is_verified`, `verification_token`, `reset_token`, `reset_token_expires`, `created_at`, `updated_at`) VALUES
 (2, '1-220471@asiatech.edu.ph', '$2a$12$VmPCIUGEjf62seT0XvF42ODetu.2Lr9HYqOprxr7JsZMvkF3SGHHC', 'user', 1, '12fce09c7fcd6e5c114e1e8b6b20446e35d469de10505a64a82856e23d396ed2', NULL, NULL, '2025-10-09 14:25:09', '2025-10-09 14:25:49'),
 (3, '1-220443@asiatech.edu.ph', '$2a$12$O37NdMD5Ar9Tl.jVZ0qQa.IhvX4Bt9dYQCXYeTDQ6aXF/gTl29L1.', 'user', 1, '539c30cef99b6ed84045552a18cf8d02e37dae46267fd52712e3870928aa5981', NULL, NULL, '2025-10-23 14:59:26', '2025-10-23 15:01:24'),
-(4, '1-220043@asiatech.edu.ph', '$2a$12$9JhbPLhgahxM4u7hxrdeaugTKVz4zudWU53EC50WthmYpomU/Y7Se', 'user', 0, 'a6fb11100c14f64fa30d1033a403d3baf936a7f0cea04c71537386e67ad01e6c', NULL, NULL, '2025-10-23 17:17:02', '2025-10-23 17:17:02');
+(4, '1-220043@asiatech.edu.ph', '$2a$12$9JhbPLhgahxM4u7hxrdeaugTKVz4zudWU53EC50WthmYpomU/Y7Se', 'user', 0, 'a6fb11100c14f64fa30d1033a403d3baf936a7f0cea04c71537386e67ad01e6c', NULL, NULL, '2025-10-23 17:17:02', '2025-10-23 17:17:02'),
+(5, '1-220026@asiatech.edu.ph', '$2a$12$8ntikZY/sJK2HAju8tdiruEMJgOiIShfJnH3EMgO.aEhSkyNIOLty', 'user', 1, '36bf0d0e638e438cb413e3dcc79bdf32972ba39edcf9ab27d7d33597846ae129', NULL, NULL, '2025-10-29 05:55:33', '2025-10-29 05:56:59');
 
 -- --------------------------------------------------------
 
@@ -968,7 +1059,63 @@ CREATE TABLE `user_courses` (
 
 INSERT INTO `user_courses` (`id`, `user_id`, `course_id`, `graduation_status`, `created_at`) VALUES
 (2, 2, 10, 'current', '2025-10-09 14:27:16'),
-(3, 3, 4, 'current', '2025-10-23 15:06:38');
+(3, 3, 4, 'current', '2025-10-23 15:06:38'),
+(4, 5, 10, 'current', '2025-10-29 05:58:10');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_employment_status`
+--
+
+CREATE TABLE `user_employment_status` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `application_id` int(11) NOT NULL,
+  `job_id` int(11) NOT NULL,
+  `employer_type` enum('coordinator','company') NOT NULL,
+  `employer_id` int(11) NOT NULL,
+  `employer_name` varchar(255) NOT NULL,
+  `job_title` varchar(255) NOT NULL,
+  `hired_date` datetime NOT NULL,
+  `employment_status` enum('active','contract_ended') DEFAULT 'active',
+  `contract_end_date` datetime DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `user_employment_status`
+--
+
+INSERT INTO `user_employment_status` (`id`, `user_id`, `application_id`, `job_id`, `employer_type`, `employer_id`, `employer_name`, `job_title`, `hired_date`, `employment_status`, `contract_end_date`, `created_at`, `updated_at`) VALUES
+(2, 2, 3, 2, 'company', 3, 'Company Corporation', 'Web Developer Intern', '2025-10-28 23:55:34', 'active', NULL, '2025-10-28 15:55:34', '2025-10-28 15:55:34');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_notifications`
+--
+
+CREATE TABLE `user_notifications` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `title` varchar(255) NOT NULL,
+  `message` text NOT NULL,
+  `type` enum('interview_reminder','application_status','system') NOT NULL,
+  `related_id` int(11) DEFAULT NULL,
+  `is_read` tinyint(1) DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `expires_at` timestamp NOT NULL DEFAULT (current_timestamp() + interval 7 day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `user_notifications`
+--
+
+INSERT INTO `user_notifications` (`id`, `user_id`, `title`, `message`, `type`, `related_id`, `is_read`, `created_at`, `expires_at`) VALUES
+(12, 2, 'Interview Completed', 'Your interview for Web Developer Intern has been completed. The employer will contact you soon with their decision.', 'application_status', 8, 1, '2025-10-28 15:54:40', '2025-11-04 07:54:40'),
+(13, 2, 'Congratulations! You\'ve been hired!', 'You have been hired for the position of Web Developer Intern at Company Corporation', 'application_status', 29, 1, '2025-10-28 15:55:37', '2025-11-04 07:55:37');
 
 -- --------------------------------------------------------
 
@@ -997,8 +1144,29 @@ CREATE TABLE `user_profiles` (
 --
 
 INSERT INTO `user_profiles` (`id`, `user_id`, `first_name`, `last_name`, `student_type`, `contact_number`, `age`, `birthdate`, `gender`, `profile_photo`, `profile_completed`, `created_at`, `updated_at`) VALUES
-(2, 2, 'Rasel', 'Maraña', 'ojt', '09609167874', 21, '2004-03-02', 'male', 'uploads/profiles/user_2_1761116247141.webp', 1, '2025-10-09 14:26:27', '2025-10-22 06:57:27'),
-(3, 3, 'Andrew', 'Mindoro', 'ojt', '09609167874', 19, '2003-10-29', 'male', 'uploads/profiles/user_3_1761238580177.webp', 1, '2025-10-23 15:04:34', '2025-10-23 16:56:20');
+(2, 2, 'Rasel', 'Maraña', 'ojt', '09609167874', 21, '2004-03-02', 'male', 'uploads/profiles/user_2_1761471632411.webp', 1, '2025-10-09 14:26:27', '2025-10-26 09:40:32'),
+(3, 3, 'Andrew', 'Mindoro', 'ojt', '09609167874', 19, '2003-10-29', 'male', NULL, 1, '2025-10-23 15:04:34', '2025-10-26 09:11:32'),
+(4, 5, 'James', 'Malibago', 'ojt', '09383541664', 23, '2002-03-16', 'male', NULL, 1, '2025-10-29 05:58:10', '2025-10-29 05:58:10');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `user_rating_archive`
+--
+
+CREATE TABLE `user_rating_archive` (
+  `id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `rated_by_type` enum('coordinator','company') NOT NULL,
+  `rated_by_id` int(11) NOT NULL,
+  `rating` decimal(2,1) NOT NULL,
+  `comment` text DEFAULT NULL,
+  `original_application_id` int(11) DEFAULT NULL,
+  `job_title` varchar(255) DEFAULT NULL,
+  `archived_date` timestamp NOT NULL DEFAULT current_timestamp(),
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ;
 
 --
 -- Indexes for dumped tables
@@ -1027,6 +1195,15 @@ ALTER TABLE `applicant_ratings`
   ADD UNIQUE KEY `unique_rating` (`application_id`,`rated_by_type`,`rated_by_id`),
   ADD KEY `idx_application` (`application_id`),
   ADD KEY `idx_rated_by` (`rated_by_type`,`rated_by_id`);
+
+--
+-- Indexes for table `application_actions`
+--
+ALTER TABLE `application_actions`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_application` (`application_id`),
+  ADD KEY `idx_auto_delete` (`auto_delete_date`),
+  ADD KEY `idx_action_type` (`action_type`);
 
 --
 -- Indexes for table `ats_resume_data`
@@ -1159,6 +1336,24 @@ ALTER TABLE `email_notifications`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `email_templates`
+--
+ALTER TABLE `email_templates`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `template_name` (`template_name`);
+
+--
+-- Indexes for table `interviews`
+--
+ALTER TABLE `interviews`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `job_id` (`job_id`),
+  ADD KEY `idx_interview_date` (`interview_date`),
+  ADD KEY `idx_status` (`status`),
+  ADD KEY `idx_application` (`application_id`),
+  ADD KEY `idx_user` (`user_id`);
+
+--
 -- Indexes for table `jobs`
 --
 ALTER TABLE `jobs`
@@ -1172,7 +1367,8 @@ ALTER TABLE `jobs`
   ADD KEY `idx_jobs_status` (`status`),
   ADD KEY `idx_jobs_deadline` (`application_deadline`),
   ADD KEY `idx_target_student_type` (`target_student_type`),
-  ADD KEY `idx_job_average_rating` (`average_rating`);
+  ADD KEY `idx_job_average_rating` (`average_rating`),
+  ADD KEY `idx_application_limit` (`application_limit`);
 
 --
 -- Indexes for table `job_applications`
@@ -1184,7 +1380,9 @@ ALTER TABLE `job_applications`
   ADD KEY `idx_user_id` (`user_id`),
   ADD KEY `idx_job_applications_job_status` (`job_id`,`status`),
   ADD KEY `idx_job_applications_user_id` (`user_id`),
-  ADD KEY `idx_average_rating` (`average_rating`);
+  ADD KEY `idx_average_rating` (`average_rating`),
+  ADD KEY `idx_auto_delete` (`auto_delete_date`),
+  ADD KEY `idx_interview` (`interview_id`);
 
 --
 -- Indexes for table `job_application_answers`
@@ -1281,11 +1479,38 @@ ALTER TABLE `user_courses`
   ADD KEY `course_id` (`course_id`);
 
 --
+-- Indexes for table `user_employment_status`
+--
+ALTER TABLE `user_employment_status`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `application_id` (`application_id`),
+  ADD KEY `job_id` (`job_id`),
+  ADD KEY `idx_user_status` (`user_id`,`employment_status`),
+  ADD KEY `idx_employer` (`employer_type`,`employer_id`);
+
+--
+-- Indexes for table `user_notifications`
+--
+ALTER TABLE `user_notifications`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_unread` (`user_id`,`is_read`),
+  ADD KEY `idx_expires` (`expires_at`);
+
+--
 -- Indexes for table `user_profiles`
 --
 ALTER TABLE `user_profiles`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `user_id` (`user_id`);
+
+--
+-- Indexes for table `user_rating_archive`
+--
+ALTER TABLE `user_rating_archive`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_user_id` (`user_id`),
+  ADD KEY `idx_rated_by` (`rated_by_type`,`rated_by_id`),
+  ADD KEY `idx_archived_date` (`archived_date`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -1310,6 +1535,12 @@ ALTER TABLE `applicant_ratings`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
+-- AUTO_INCREMENT for table `application_actions`
+--
+ALTER TABLE `application_actions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+
+--
 -- AUTO_INCREMENT for table `ats_resume_data`
 --
 ALTER TABLE `ats_resume_data`
@@ -1325,7 +1556,7 @@ ALTER TABLE `companies`
 -- AUTO_INCREMENT for table `company_application_actions`
 --
 ALTER TABLE `company_application_actions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `company_application_comments`
@@ -1391,19 +1622,31 @@ ALTER TABLE `courses`
 -- AUTO_INCREMENT for table `email_notifications`
 --
 ALTER TABLE `email_notifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=28;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=32;
+
+--
+-- AUTO_INCREMENT for table `email_templates`
+--
+ALTER TABLE `email_templates`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `interviews`
+--
+ALTER TABLE `interviews`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `jobs`
 --
 ALTER TABLE `jobs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `job_applications`
 --
 ALTER TABLE `job_applications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `job_application_answers`
@@ -1439,37 +1682,55 @@ ALTER TABLE `job_ratings`
 -- AUTO_INCREMENT for table `job_screening_questions`
 --
 ALTER TABLE `job_screening_questions`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `otp_verifications`
 --
 ALTER TABLE `otp_verifications`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `resumes`
 --
 ALTER TABLE `resumes`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `user_courses`
 --
 ALTER TABLE `user_courses`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `user_employment_status`
+--
+ALTER TABLE `user_employment_status`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `user_notifications`
+--
+ALTER TABLE `user_notifications`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
 
 --
 -- AUTO_INCREMENT for table `user_profiles`
 --
 ALTER TABLE `user_profiles`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `user_rating_archive`
+--
+ALTER TABLE `user_rating_archive`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Constraints for dumped tables
@@ -1486,6 +1747,12 @@ ALTER TABLE `admin_profiles`
 --
 ALTER TABLE `applicant_ratings`
   ADD CONSTRAINT `applicant_ratings_ibfk_1` FOREIGN KEY (`application_id`) REFERENCES `job_applications` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `application_actions`
+--
+ALTER TABLE `application_actions`
+  ADD CONSTRAINT `application_actions_ibfk_1` FOREIGN KEY (`application_id`) REFERENCES `job_applications` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `ats_resume_data`
@@ -1565,6 +1832,14 @@ ALTER TABLE `coordinator_ratings`
   ADD CONSTRAINT `fk_coordinator_ratings_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
+-- Constraints for table `interviews`
+--
+ALTER TABLE `interviews`
+  ADD CONSTRAINT `interviews_ibfk_1` FOREIGN KEY (`application_id`) REFERENCES `job_applications` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `interviews_ibfk_2` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `interviews_ibfk_3` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
 -- Constraints for table `job_applications`
 --
 ALTER TABLE `job_applications`
@@ -1617,6 +1892,20 @@ ALTER TABLE `resumes`
 ALTER TABLE `user_courses`
   ADD CONSTRAINT `user_courses_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `user_courses_ibfk_2` FOREIGN KEY (`course_id`) REFERENCES `courses` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `user_employment_status`
+--
+ALTER TABLE `user_employment_status`
+  ADD CONSTRAINT `user_employment_status_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `user_employment_status_ibfk_2` FOREIGN KEY (`application_id`) REFERENCES `job_applications` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `user_employment_status_ibfk_3` FOREIGN KEY (`job_id`) REFERENCES `jobs` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `user_notifications`
+--
+ALTER TABLE `user_notifications`
+  ADD CONSTRAINT `user_notifications_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `user_profiles`

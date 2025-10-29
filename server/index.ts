@@ -17,8 +17,12 @@ import resumeRoutes from './routes/resumes.js';
 import adminRoutes from './routes/admin.js';
 import coordinatorRoutes from './routes/coordinator.js';
 import uploadRoutes from './routes/upload.js';
+import applicationActionRoutes from './routes/applicationActions.js';
+import interviewRoutes from './routes/interviews.js';
+import notificationRoutes from './routes/notifications.js';
+import { CronJobService } from './services/cronJobs.js';
 
-dotenv.config();
+dotenv.config({ path: './server/.env' });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -36,11 +40,13 @@ app.use(cors({
   credentials: true
 }));
 
-// Rate limiting
+// Rate limiting - Increased for better UX during development
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  max: 300, // limit each IP to 300 requests per windowMs (increased from 100)
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 app.use(limiter);
 
@@ -70,6 +76,9 @@ app.use('/api/resumes', resumeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/coordinators', coordinatorRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/jobs', applicationActionRoutes);
+app.use('/api/interviews', interviewRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -89,9 +98,30 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Initialize database connection
+  try {
+    await createConnection();
+    logger.info('✅ Database connected successfully');
+    
+    // Test email connection
+    const { EmailService } = await import('./services/emailService.js');
+    const emailConnectionWorks = await EmailService.testConnection();
+    if (emailConnectionWorks) {
+      logger.info('✅ SMTP connection verified successfully');
+    } else {
+      logger.warn('⚠️ SMTP connection failed - emails will not be sent');
+    }
+    
+    // Initialize cron jobs after database connection
+    CronJobService.initialize();
+    
+  } catch (error) {
+    logger.error('❌ Failed to initialize database or cron jobs:', error);
+  }
 });
 
 export default app;

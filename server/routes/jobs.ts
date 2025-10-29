@@ -115,6 +115,7 @@ router.post('/', authenticate, authorize('coordinator', 'company'), asyncHandler
     companyName,
     applicationDeadline,
     positionsAvailable,
+    applicationLimit,
     experienceLevel,
     targetStudentType,
     coordinatorName,
@@ -138,14 +139,14 @@ router.post('/', authenticate, authorize('coordinator', 'company'), asyncHandler
         title, location, category, work_type, work_arrangement, 
         currency, min_salary, max_salary, description, summary, 
         video_url, company_name, application_deadline, positions_available, 
-        experience_level, target_student_type, created_by_type, created_by_id, coordinator_name, 
+        application_limit, experience_level, target_student_type, created_by_type, created_by_id, coordinator_name, 
         business_owner_name, filter_pre_screening
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       title, location, category, workType || 'internship', workArrangement || 'on-site',
       currency || 'PHP', minSalary || null, maxSalary || null, description, summary || null,
       videoUrl || null, companyName || null, applicationDeadline || null, positionsAvailable || 1,
-      experienceLevel || 'entry-level', targetStudentType || 'both', req.user!.role, req.user!.id, coordinatorName || null,
+      applicationLimit || null, experienceLevel || 'entry-level', targetStudentType || 'both', req.user!.role, req.user!.id, coordinatorName || null,
       businessOwnerName || null, filterPreScreening || false
     ]);
 
@@ -301,41 +302,146 @@ router.get('/', asyncHandler(async (req, res) => {
 // Get job recommendations for user
 router.get('/recommendations', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
   try {
-    const recommendations = await JobRecommendationService.getRecommendationsForUser(req.user!.id);
+    // First, try to get recommendations from the Python AI service
+    let aiRecommendations: any[] | null = null;
+    const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:5001';
     
-    if (recommendations.length === 0) {
+    try {
+      console.log(`🤖 Calling AI recommendation service for user ${req.user!.id}...`);
+      
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const aiResponse = await fetch(`${AI_SERVICE_URL}/recommendations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: req.user!.id,
+          limit: 10,
+          include_reasons: true
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (aiResponse.ok) {
+        const aiData = await aiResponse.json();
+        if (aiData.success && aiData.recommendations) {
+          aiRecommendations = aiData.recommendations as any[];
+          console.log(`✅ AI service returned ${aiRecommendations.length} recommendations`);
+        }
+      } else {
+        console.warn(`⚠️ AI service responded with status ${aiResponse.status}`);
+      }
+    } catch (aiError) {
+      console.warn(`⚠️ AI recommendation service unavailable: ${aiError}. Falling back to legacy system.`);
+    }
+
+    // If AI recommendations are available, use them
+    if (aiRecommendations && aiRecommendations.length > 0) {
+      // Get job details for AI recommended jobs
+      const jobIds = aiRecommendations.map((r: any) => r.job_id);
+      const connection = getConnection();
+      
+      const [jobs] = await connection.execute(`
+        SELECT 
+          j.*,
+          COALESCE(
+            CONCAT(cp.first_name, ' ', cp.last_name), 
+            company_p.company_name, 
+            j.coordinator_name, 
+            'Unknown'
+          ) as created_by_name,
+          COUNT(DISTINCT ja.id) as application_count,
+          AVG(jr.rating) as average_rating,
+          COUNT(DISTINCT jr.id) as rating_count
+        FROM jobs j
+        LEFT JOIN coordinator_profiles cp ON j.created_by_type = 'coordinator' AND j.created_by_id = cp.coordinator_id
+        LEFT JOIN company_profiles company_p ON j.created_by_type = 'company' AND j.created_by_id = company_p.company_id
+        LEFT JOIN job_applications ja ON j.id = ja.job_id
+        LEFT JOIN job_ratings jr ON j.id = jr.job_id
+        WHERE j.id IN (${jobIds.map(() => '?').join(',')})
+        GROUP BY j.id
+      `, jobIds);
+
+      // Add AI match information to jobs
+      const jobsWithAIMatches = (jobs as any[]).map(job => {
+        const aiMatch = aiRecommendations!.find((r: any) => r.job_id === job.id);
+        return {
+          ...job,
+          matchScore: Math.round(aiMatch?.hybrid_score * 100) || 0, // Convert to 0-100 scale
+          contentScore: Math.round(aiMatch?.content_score * 100) || 0,
+          knowledgeScore: Math.round(aiMatch?.knowledge_score * 100) || 0,
+          confidence: Math.round(aiMatch?.confidence * 100) || 0,
+          matchReasons: aiMatch?.reasons || [],
+          recommendationSource: 'hybrid_ai'
+        };
+      });
+
+      // Sort by AI hybrid score (already sorted from AI service)
+      const sortedJobs = jobsWithAIMatches.sort((a, b) => b.matchScore - a.matchScore);
+
       return res.json({
-        message: 'Complete your profile and build your resume to get personalized job recommendations',
-        jobs: []
+        message: 'AI-powered personalized job recommendations based on your profile and resume',
+        jobs: sortedJobs,
+        source: 'hybrid_ai',
+        algorithm_info: {
+          version: '2.0.0',
+          type: 'hybrid',
+          features: ['content_based', 'knowledge_matching', 'semantic_similarity']
+        }
       });
     }
 
-    // Get job details for recommended jobs
-    const jobIds = recommendations.map(r => r.jobId);
+    // Fallback to legacy recommendation system
+    console.log(`📊 Using legacy recommendation system for user ${req.user!.id}`);
+    const legacyRecommendations = await JobRecommendationService.getRecommendationsForUser(req.user!.id);
+    
+    if (legacyRecommendations.length === 0) {
+      return res.json({
+        message: 'Complete your profile and build your resume to get personalized job recommendations',
+        jobs: [],
+        source: 'legacy'
+      });
+    }
+
+    // Get job details for legacy recommended jobs
+    const jobIds = legacyRecommendations.map(r => r.jobId);
     const connection = getConnection();
     
     const [jobs] = await connection.execute(`
       SELECT 
         j.*,
-        COALESCE(CONCAT(cp.first_name, ' ', cp.last_name), j.coordinator_name, 'Unknown Coordinator') as created_by_name,
-        COUNT(ja.id) as application_count,
+        COALESCE(
+          CONCAT(cp.first_name, ' ', cp.last_name), 
+          company_p.company_name, 
+          j.coordinator_name, 
+          'Unknown'
+        ) as created_by_name,
+        COUNT(DISTINCT ja.id) as application_count,
         AVG(jr.rating) as average_rating,
-        COUNT(jr.id) as rating_count
+        COUNT(DISTINCT jr.id) as rating_count
       FROM jobs j
       LEFT JOIN coordinator_profiles cp ON j.created_by_type = 'coordinator' AND j.created_by_id = cp.coordinator_id
+      LEFT JOIN company_profiles company_p ON j.created_by_type = 'company' AND j.created_by_id = company_p.company_id
       LEFT JOIN job_applications ja ON j.id = ja.job_id
       LEFT JOIN job_ratings jr ON j.id = jr.job_id
       WHERE j.id IN (${jobIds.map(() => '?').join(',')})
       GROUP BY j.id
     `, jobIds);
 
-    // Add match information to jobs
+    // Add legacy match information to jobs
     const jobsWithMatches = (jobs as any[]).map(job => {
-      const matchInfo = recommendations.find(r => r.jobId === job.id);
+      const matchInfo = legacyRecommendations.find(r => r.jobId === job.id);
       return {
         ...job,
         matchScore: matchInfo?.matchScore || 0,
-        matchReasons: matchInfo?.matchReasons || []
+        matchReasons: matchInfo?.matchReasons || [],
+        recommendationSource: 'legacy'
       };
     });
 
@@ -344,7 +450,8 @@ router.get('/recommendations', authenticate, authorize('user'), asyncHandler(asy
 
     res.json({
       message: 'Personalized job recommendations based on your profile',
-      jobs: jobsWithMatches
+      jobs: jobsWithMatches,
+      source: 'legacy'
     });
 
   } catch (error: any) {
@@ -608,14 +715,14 @@ router.get('/:id/my-rating', authenticate, authorize('user'), asyncHandler(async
   }
 }));
 
-// Get applications for a job (coordinators and companies)
+// Get applications for a job (coordinators and companies - only for their own jobs)
 router.get('/:id/applications', authenticate, authorize('coordinator', 'company'), asyncHandler(async (req: AuthRequest, res) => {
   const { id: jobId } = req.params;
   const { status, page = 1, limit = 10 } = req.query;
 
   const connection = getConnection();
 
-  // Get job info to determine created_by_type
+  // Get job info to validate ownership
   const [jobInfo] = await connection.execute(
     'SELECT created_by_type, created_by_id FROM jobs WHERE id = ?',
     [jobId]
@@ -626,6 +733,15 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
   }
 
   const job = (jobInfo as any[])[0];
+
+  // Validate that the requesting user owns this job
+  const userRole = req.user!.role;
+  const userId = req.user!.id;
+
+  if ((userRole === 'coordinator' && (job.created_by_type !== 'coordinator' || job.created_by_id !== userId)) ||
+      (userRole === 'company' && (job.created_by_type !== 'company' || job.created_by_id !== userId))) {
+    return res.status(403).json({ message: 'Access denied: You can only view applications for your own job posts' });
+  }
 
   let query = `
     SELECT 
@@ -644,7 +760,12 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
       user_stats.highest_rating,
       user_stats.lowest_rating,
       user_stats.company_ratings_count,
-      user_stats.coordinator_ratings_count
+      user_stats.coordinator_ratings_count,
+      -- Employment history with this employer
+      employment_history.employment_count,
+      employment_history.last_hired_date,
+      employment_history.last_job_title,
+      employment_history.current_employment_status
     FROM job_applications ja
     LEFT JOIN user_profiles up ON ja.user_id = up.user_id
     LEFT JOIN ats_resume_data ats ON ja.id = ats.application_id
@@ -654,21 +775,43 @@ router.get('/:id/applications', authenticate, authorize('coordinator', 'company'
       AND ar.rated_by_id = ?
     LEFT JOIN (
       SELECT 
-        ja_inner.user_id,
-        AVG(ar_inner.rating) as overall_average_rating,
-        COUNT(ar_inner.id) as total_ratings,
-        MAX(ar_inner.rating) as highest_rating,
-        MIN(ar_inner.rating) as lowest_rating,
-        COUNT(CASE WHEN ar_inner.rated_by_type = 'company' THEN 1 END) as company_ratings_count,
-        COUNT(CASE WHEN ar_inner.rated_by_type = 'coordinator' THEN 1 END) as coordinator_ratings_count
-      FROM job_applications ja_inner
-      LEFT JOIN applicant_ratings ar_inner ON ja_inner.id = ar_inner.application_id
-      GROUP BY ja_inner.user_id
+        user_id,
+        AVG(rating) as overall_average_rating,
+        COUNT(id) as total_ratings,
+        MAX(rating) as highest_rating,
+        MIN(rating) as lowest_rating,
+        COUNT(CASE WHEN rated_by_type = 'company' THEN 1 END) as company_ratings_count,
+        COUNT(CASE WHEN rated_by_type = 'coordinator' THEN 1 END) as coordinator_ratings_count
+      FROM (
+        -- Active ratings from current applications
+        SELECT ja_inner.user_id, ar_inner.id, ar_inner.rating, ar_inner.rated_by_type
+        FROM job_applications ja_inner
+        LEFT JOIN applicant_ratings ar_inner ON ja_inner.id = ar_inner.application_id
+        WHERE ar_inner.id IS NOT NULL
+        
+        UNION ALL
+        
+        -- Archived ratings from deleted applications
+        SELECT ura.user_id, ura.id, ura.rating, ura.rated_by_type
+        FROM user_rating_archive ura
+      ) combined_ratings
+      GROUP BY user_id
     ) user_stats ON ja.user_id = user_stats.user_id
+    LEFT JOIN (
+      SELECT 
+        ues.user_id,
+        COUNT(*) as employment_count,
+        MAX(ues.hired_date) as last_hired_date,
+        MAX(ues.job_title) as last_job_title,
+        MAX(ues.employment_status) as current_employment_status
+      FROM user_employment_status ues
+      WHERE ues.employer_type = ? AND ues.employer_id = ?
+      GROUP BY ues.user_id
+    ) employment_history ON ja.user_id = employment_history.user_id
     WHERE ja.job_id = ?
   `;
 
-  const queryParams: any[] = [job.created_by_type, req.user!.id, jobId];
+  const queryParams: any[] = [job.created_by_type, req.user!.id, job.created_by_type, req.user!.id, jobId];
 
   if (status) {
     query += ' AND ja.status = ?';
@@ -852,12 +995,36 @@ router.patch('/applications/:applicationId/status', authenticate, authorize('coo
   const { applicationId } = req.params;
   const { status } = req.body;
 
-  const validStatuses = ['pending', 'under_review', 'qualified', 'rejected', 'hired'];
+  const validStatuses = ['pending', 'under_review', 'qualified'];
   if (!validStatuses.includes(status)) {
     return res.status(400).json({ message: 'Invalid status' });
   }
 
   const connection = getConnection();
+
+  // Validate that the requesting coordinator owns the job this application belongs to
+  const [applicationJob] = await connection.execute(`
+    SELECT j.created_by_type, j.created_by_id, ja.status as current_status
+    FROM job_applications ja
+    JOIN jobs j ON ja.job_id = j.id
+    WHERE ja.id = ?
+  `, [applicationId]);
+
+  if ((applicationJob as any[]).length === 0) {
+    return res.status(404).json({ message: 'Application not found' });
+  }
+
+  const jobInfo = (applicationJob as any[])[0];
+  if (jobInfo.created_by_type !== 'coordinator' || jobInfo.created_by_id !== req.user!.id) {
+    return res.status(403).json({ message: 'Access denied: You can only update applications for your own job posts' });
+  }
+
+  // Prevent status changes for final statuses
+  if (['accepted', 'rejected', 'hired'].includes(jobInfo.current_status)) {
+    return res.status(400).json({ 
+      message: 'Cannot change status: Application has been finalized with status ' + jobInfo.current_status 
+    });
+  }
 
   await connection.execute(
     'UPDATE job_applications SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -878,6 +1045,27 @@ router.post('/applications/:applicationId/comments', authenticate, authorize('co
 
   const connection = getConnection();
 
+  // Validate that the requesting user owns the job this application belongs to
+  const [applicationJob] = await connection.execute(`
+    SELECT j.created_by_type, j.created_by_id
+    FROM job_applications ja
+    JOIN jobs j ON ja.job_id = j.id
+    WHERE ja.id = ?
+  `, [applicationId]);
+
+  if ((applicationJob as any[]).length === 0) {
+    return res.status(404).json({ message: 'Application not found' });
+  }
+
+  const jobInfo = (applicationJob as any[])[0];
+  const userRole = req.user!.role;
+  const userId = req.user!.id;
+
+  if ((userRole === 'coordinator' && (jobInfo.created_by_type !== 'coordinator' || jobInfo.created_by_id !== userId)) ||
+      (userRole === 'company' && (jobInfo.created_by_type !== 'company' || jobInfo.created_by_id !== userId))) {
+    return res.status(403).json({ message: 'Access denied: You can only comment on applications for your own job posts' });
+  }
+
   await connection.execute(`
     INSERT INTO job_application_comments (
       application_id, commenter_id, commenter_type, comment
@@ -892,21 +1080,136 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
   const { applicationId } = req.params;
   const connection = getConnection();
 
-  // Get application details
-  const [applications] = await connection.execute(`
-    SELECT ja.*, up.profile_photo
-    FROM job_applications ja
-    LEFT JOIN user_profiles up ON ja.user_id = up.user_id
-    WHERE ja.id = ?
-  `, [applicationId]);
+  try {
+    // First, get basic application details
+    const [applications] = await connection.execute(`
+      SELECT ja.*, up.profile_photo, j.created_by_type, j.created_by_id, j.title as job_title
+      FROM job_applications ja
+      LEFT JOIN user_profiles up ON ja.user_id = up.user_id
+      JOIN jobs j ON ja.job_id = j.id
+      WHERE ja.id = ?
+    `, [applicationId]);
 
-  if ((applications as any[]).length === 0) {
-    return res.status(404).json({ message: 'Application not found' });
-  }
+    if ((applications as any[]).length === 0) {
+      return res.status(404).json({ message: 'Application not found' });
+    }
 
-  const application = (applications as any[])[0];
+    const application = (applications as any[])[0];
 
-  // Get the current user's rating
+    // Validate that the requesting user owns the job this application belongs to
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+
+    if ((userRole === 'coordinator' && (application.created_by_type !== 'coordinator' || application.created_by_id !== userId)) ||
+        (userRole === 'company' && (application.created_by_type !== 'company' || application.created_by_id !== userId))) {
+      return res.status(403).json({ message: 'Access denied: You can only view applications for your own job posts' });
+    }
+
+    // Get employment history for this user with related employers
+    let employmentHistory = {
+      employment_count: 0,
+      last_hired_date: null,
+      last_job_title: null,
+      current_employment_status: null
+    };
+
+    try {
+      console.log(`Searching employment history with parameters:`, {
+        user_id: application.user_id,
+        job_creator_type: application.created_by_type,
+        job_creator_id: application.created_by_id
+      });
+      
+      // First, try to find employment with the direct job creator
+      const [directEmployment] = await connection.execute(`
+        SELECT 
+          COUNT(*) as employment_count,
+          MAX(hired_date) as last_hired_date,
+          MAX(job_title) as last_job_title,
+          MAX(employment_status) as current_employment_status
+        FROM user_employment_status
+        WHERE user_id = ? AND employer_type = ? AND employer_id = ?
+      `, [application.user_id, application.created_by_type, application.created_by_id]);
+
+      let employment = directEmployment;
+
+      // If no direct employment found and job creator is a coordinator, check affiliated companies
+      if ((directEmployment as any[])[0]?.employment_count === 0 && application.created_by_type === 'coordinator') {
+        console.log(`No direct employment found with coordinator. Checking affiliated companies...`);
+        
+        const [affiliatedEmployment] = await connection.execute(`
+          SELECT 
+            COUNT(*) as employment_count,
+            MAX(ues.hired_date) as last_hired_date,
+            MAX(ues.job_title) as last_job_title,
+            MAX(ues.employment_status) as current_employment_status
+          FROM user_employment_status ues
+          INNER JOIN company_coordinator_affiliations cca ON ues.employer_type = 'company' AND ues.employer_id = cca.company_id
+          WHERE ues.user_id = ? AND cca.coordinator_id = ? AND cca.status = 'active'
+        `, [application.user_id, application.created_by_id]);
+
+        if ((affiliatedEmployment as any[])[0]?.employment_count > 0) {
+          employment = affiliatedEmployment;
+          console.log(`Found employment with affiliated company`);
+        }
+      }
+
+      if ((employment as any[]).length > 0) {
+        const emp = (employment as any[])[0];
+        employmentHistory = {
+          employment_count: emp.employment_count || 0,
+          last_hired_date: emp.last_hired_date,
+          last_job_title: emp.last_job_title,
+          current_employment_status: emp.current_employment_status
+        };
+        console.log(`Found employment history for user ${application.user_id}:`, employmentHistory);
+      } else {
+        console.log(`No employment history found for user ${application.user_id} with any related employers`);
+      }
+    } catch (empError) {
+      console.warn('Could not fetch employment history:', empError);
+    }
+
+    // Get user rating stats (simplified version)
+    let userRatingProfile = {
+      overall_average_rating: null,
+      total_ratings: 0,
+      highest_rating: null,
+      lowest_rating: null,
+      company_ratings_count: 0,
+      coordinator_ratings_count: 0
+    };
+
+    try {
+      const [ratingStats] = await connection.execute(`
+        SELECT 
+          AVG(ar.rating) as overall_average_rating,
+          COUNT(ar.id) as total_ratings,
+          MAX(ar.rating) as highest_rating,
+          MIN(ar.rating) as lowest_rating,
+          COUNT(CASE WHEN ar.rated_by_type = 'company' THEN 1 END) as company_ratings_count,
+          COUNT(CASE WHEN ar.rated_by_type = 'coordinator' THEN 1 END) as coordinator_ratings_count
+        FROM applicant_ratings ar
+        INNER JOIN job_applications ja_inner ON ar.application_id = ja_inner.id
+        WHERE ja_inner.user_id = ?
+      `, [application.user_id]);
+
+      if ((ratingStats as any[]).length > 0) {
+        const stats = (ratingStats as any[])[0];
+        userRatingProfile = {
+          overall_average_rating: stats.overall_average_rating,
+          total_ratings: stats.total_ratings || 0,
+          highest_rating: stats.highest_rating,
+          lowest_rating: stats.lowest_rating,
+          company_ratings_count: stats.company_ratings_count || 0,
+          coordinator_ratings_count: stats.coordinator_ratings_count || 0
+        };
+      }
+    } catch (ratingError) {
+      console.warn('Could not fetch rating stats:', ratingError);
+    }
+
+    // Get the current user's rating
   let userRating = null;
   let userRatingComment = null;
   if (req.user!.role === 'company') {
@@ -933,18 +1236,25 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
     }
   }
 
-  // Get screening question answers
-  const [answers] = await connection.execute(`
-    SELECT 
-      jaa.*,
-      jsq.question_text,
-      jsq.question_type,
-      jsq.options
-    FROM job_application_answers jaa
-    LEFT JOIN job_screening_questions jsq ON jaa.question_id = jsq.id
-    WHERE jaa.application_id = ?
-    ORDER BY jsq.order_index
-  `, [applicationId]);
+    // Get screening question answers
+    let screeningAnswers: any[] = [];
+    try {
+      const [answers] = await connection.execute(`
+        SELECT 
+          jaa.*,
+          jsq.question_text,
+          jsq.question_type,
+          jsq.options
+        FROM job_application_answers jaa
+        LEFT JOIN job_screening_questions jsq ON jaa.question_id = jsq.id
+        WHERE jaa.application_id = ?
+        ORDER BY jsq.order_index
+      `, [applicationId]);
+      screeningAnswers = answers as any[];
+      console.log(`Found ${screeningAnswers.length} screening answers for application ${applicationId}`);
+    } catch (answerError) {
+      console.warn('Could not fetch screening answers:', answerError);
+    }
 
   // Get ALL ratings for this USER across all their applications (complete profile)
   const [ratings] = await connection.execute(`
@@ -1007,7 +1317,7 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
   res.json({
     ...application,
     profile_photo: UploadService.getPhotoUrl(application.profile_photo),
-    screening_answers: answers,
+    screening_answers: screeningAnswers,
     all_ratings: processedRatings,
     // Add user's own rating for companies and coordinators (for this specific application)
     company_rating: req.user!.role === 'company' ? userRating : null,
@@ -1015,21 +1325,48 @@ router.get('/applications/:applicationId/details', authenticate, authorize('coor
     user_rating: req.user!.role === 'coordinator' ? userRating : null,
     user_rating_comment: req.user!.role === 'coordinator' ? userRatingComment : null,
     // Add complete user rating profile from all applications
-    user_rating_profile: {
-      overall_average_rating: userStats.overall_average_rating,
-      total_ratings: userStats.total_ratings,
-      highest_rating: userStats.highest_rating,
-      lowest_rating: userStats.lowest_rating,
-      company_ratings_count: userStats.company_ratings_count,
-      coordinator_ratings_count: userStats.coordinator_ratings_count
-    }
+    user_rating_profile: userRatingProfile,
+    // Add employment history
+    employment_count: employmentHistory.employment_count,
+    last_hired_date: employmentHistory.last_hired_date,
+    last_job_title: employmentHistory.last_job_title,
+    current_employment_status: employmentHistory.current_employment_status
   });
+
+  } catch (error) {
+    console.error('Error in application details endpoint:', error);
+    res.status(500).json({ 
+      message: 'Failed to fetch application details',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
 }));
 
-// Get comments for application (coordinators and companies can see all comments)
+// Get comments for application (coordinators and companies can see all comments for their own job posts)
 router.get('/applications/:applicationId/comments', authenticate, authorize('coordinator', 'company'), asyncHandler(async (req: AuthRequest, res) => {
   const { applicationId } = req.params;
   const connection = getConnection();
+
+  // First, validate that the requesting user owns the job this application belongs to
+  const [applicationJob] = await connection.execute(`
+    SELECT j.created_by_type, j.created_by_id
+    FROM job_applications ja
+    JOIN jobs j ON ja.job_id = j.id
+    WHERE ja.id = ?
+  `, [applicationId]);
+
+  if ((applicationJob as any[]).length === 0) {
+    return res.status(404).json({ message: 'Application not found' });
+  }
+
+  const jobInfo = (applicationJob as any[])[0];
+  const userRole = req.user!.role;
+  const userId = req.user!.id;
+
+  if ((userRole === 'coordinator' && (jobInfo.created_by_type !== 'coordinator' || jobInfo.created_by_id !== userId)) ||
+      (userRole === 'company' && (jobInfo.created_by_type !== 'company' || jobInfo.created_by_id !== userId))) {
+    return res.status(403).json({ message: 'Access denied: You can only view comments for applications on your own job posts' });
+  }
 
   const [comments] = await connection.execute(`
     SELECT 
@@ -1069,6 +1406,7 @@ router.put('/:id', authenticate, authorize('coordinator', 'company'), asyncHandl
     companyName,
     applicationDeadline,
     positionsAvailable,
+    applicationLimit,
     experienceLevel,
     targetStudentType,
     coordinatorName,
@@ -1107,14 +1445,14 @@ router.put('/:id', authenticate, authorize('coordinator', 'company'), asyncHandl
         title = ?, location = ?, category = ?, work_type = ?, work_arrangement = ?, 
         currency = ?, min_salary = ?, max_salary = ?, description = ?, summary = ?, 
         video_url = ?, company_name = ?, application_deadline = ?, positions_available = ?, 
-        experience_level = ?, target_student_type = ?, coordinator_name = ?, business_owner_name = ?, status = ?,
+        application_limit = ?, experience_level = ?, target_student_type = ?, coordinator_name = ?, business_owner_name = ?, status = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
       title, location, category, workType || 'internship', workArrangement || 'on-site',
       currency || 'PHP', minSalary || null, maxSalary || null, description, summary || null,
       videoUrl || null, companyName || null, applicationDeadline || null, positionsAvailable || 1,
-      experienceLevel || 'entry-level', targetStudentType || 'both', coordinatorName || null, businessOwnerName || null,
+      applicationLimit || null, experienceLevel || 'entry-level', targetStudentType || 'both', coordinatorName || null, businessOwnerName || null,
       status || 'active', id
     ]);
 
@@ -1175,6 +1513,21 @@ router.delete('/:id', authenticate, authorize('coordinator', 'company'), asyncHa
     if (job.created_by_type !== req.user!.role || job.created_by_id !== req.user!.id) {
       return res.status(403).json({ message: 'You can only delete jobs you created' });
     }
+
+    // Archive ratings to preserve user rating history before deletion
+    await connection.execute(`
+      INSERT INTO user_rating_archive (
+        user_id, rated_by_type, rated_by_id, rating, comment, 
+        original_application_id, job_title, archived_date
+      )
+      SELECT 
+        ja.user_id, ar.rated_by_type, ar.rated_by_id, ar.rating, ar.comment,
+        ar.application_id, j.title, NOW()
+      FROM applicant_ratings ar
+      JOIN job_applications ja ON ar.application_id = ja.id
+      JOIN jobs j ON ja.job_id = j.id
+      WHERE ja.job_id = ?
+    `, [id]);
 
     // Delete job (cascade will handle related tables)
     await connection.execute('DELETE FROM jobs WHERE id = ?', [id]);

@@ -3,15 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../services/api';
 import { toast } from 'react-hot-toast';
+import { formatNumberWithCommas, handleCommaFormattedInput, removeCommasFromNumber } from '../../utils/formatUtils';
 import {
-  BriefcaseIcon,
-  CurrencyDollarIcon,
-  DocumentTextIcon,
   Cog6ToothIcon,
   PlusIcon,
   TrashIcon,
-  ArrowLeftIcon,
-  EyeIcon,
   XCircleIcon
 } from '@heroicons/react/24/outline';
 
@@ -55,6 +51,7 @@ export const CompanyEditJob: React.FC = () => {
     videoUrl: '',
     applicationDeadline: '',
     positionsAvailable: '1',
+    applicationLimit: '',
     experienceLevel: 'entry-level',
     targetStudentType: 'both',
     status: 'active',
@@ -187,13 +184,14 @@ export const CompanyEditJob: React.FC = () => {
         workType: job.work_type || 'internship',
         workArrangement: job.work_arrangement || 'on-site',
         currency: job.currency || 'PHP',
-        minSalary: job.min_salary ? job.min_salary.toString() : '',
-        maxSalary: job.max_salary ? job.max_salary.toString() : '',
+        minSalary: job.min_salary ? formatNumberWithCommas(job.min_salary.toString()) : '',
+        maxSalary: job.max_salary ? formatNumberWithCommas(job.max_salary.toString()) : '',
         description: job.description || '',
         summary: job.summary || '',
         videoUrl: job.video_url || '',
         applicationDeadline: job.application_deadline || '',
         positionsAvailable: job.positions_available ? job.positions_available.toString() : '1',
+        applicationLimit: job.application_limit ? formatNumberWithCommas(job.application_limit.toString()) : '',
         experienceLevel: job.experience_level || 'entry-level',
         targetStudentType: job.target_student_type || 'both',
         status: job.status || 'active',
@@ -237,17 +235,16 @@ export const CompanyEditJob: React.FC = () => {
     }
   };
 
-  const updateAvailableCategories = (courseName: string) => {
-    const courseData = jobCategories.find(cat => cat.course_name === courseName);
-    if (courseData) {
-      setAvailableCategories(courseData.categories);
-    } else {
-      setAvailableCategories([]);
-    }
-  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleFieldChange = (name: string, value: string) => {
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -287,7 +284,7 @@ export const CompanyEditJob: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!formData.title || !formData.location || !formData.category || !formData.description) {
+    if (!formData.title || !formData.location || !formData.category || !formData.description || !formData.applicationLimit) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -305,11 +302,17 @@ export const CompanyEditJob: React.FC = () => {
         ...customQuestions.filter(q => q.questionText.trim() !== '')
       ];
 
+      // Parse salary values, removing commas first
+      const parsedMinSalary = formData.minSalary ? parseFloat(removeCommasFromNumber(formData.minSalary)) : null;
+      const parsedMaxSalary = formData.maxSalary ? parseFloat(removeCommasFromNumber(formData.maxSalary)) : null;
+      const parsedApplicationLimit = formData.applicationLimit ? parseInt(removeCommasFromNumber(formData.applicationLimit)) : null;
+
       const jobData = {
         ...formData,
-        minSalary: formData.minSalary && !isNaN(parseFloat(formData.minSalary)) ? parseFloat(formData.minSalary) : null,
-        maxSalary: formData.maxSalary && !isNaN(parseFloat(formData.maxSalary)) ? parseFloat(formData.maxSalary) : null,
+        minSalary: parsedMinSalary && !isNaN(parsedMinSalary) ? parsedMinSalary : null,
+        maxSalary: parsedMaxSalary && !isNaN(parsedMaxSalary) ? parsedMaxSalary : null,
         positionsAvailable: parseInt(formData.positionsAvailable) || 1,
+        applicationLimit: parsedApplicationLimit && !isNaN(parsedApplicationLimit) ? parsedApplicationLimit : null,
         screeningQuestions: allScreeningQuestions
       };
 
@@ -533,6 +536,26 @@ export const CompanyEditJob: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
+                Application Limit
+                <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                name="applicationLimit"
+                value={formData.applicationLimit}
+                onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleFieldChange('applicationLimit', value))}
+                min="1"
+                placeholder="Enter maximum applications (e.g., 50)"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Maximum number of applications allowed for this job posting.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Target Student Type
               </label>
               <select
@@ -612,12 +635,12 @@ export const CompanyEditJob: React.FC = () => {
                 Minimum Salary
               </label>
               <input
-                type="number"
+                type="text"
                 name="minSalary"
                 value={formData.minSalary}
-                onChange={handleInputChange}
+                onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleFieldChange('minSalary', value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                placeholder="15000"
+                placeholder="Enter minimum salary (e.g., 15,000)"
               />
             </div>
 
@@ -626,12 +649,12 @@ export const CompanyEditJob: React.FC = () => {
                 Maximum Salary
               </label>
               <input
-                type="number"
+                type="text"
                 name="maxSalary"
                 value={formData.maxSalary}
-                onChange={handleInputChange}
+                onChange={(e) => handleCommaFormattedInput(e.target.value, (value) => handleFieldChange('maxSalary', value))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                placeholder="25000"
+                placeholder="Enter maximum salary (e.g., 25,000)"
               />
             </div>
           </div>
@@ -758,14 +781,9 @@ export const CompanyEditJob: React.FC = () => {
                       <div className="ml-3 flex-1">
                         <label htmlFor={key} className="text-sm font-medium text-gray-900 cursor-pointer">
                           {question.questionText}
-                          {question.questionType === 'salary_range' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                              Popular
-                            </span>
-                          )}
-                          {question.questionType === 'qualifications' && (
-                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                              Popular
+                          {!question.isRequired && (
+                            <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                              Optional
                             </span>
                           )}
                         </label>
@@ -780,30 +798,39 @@ export const CompanyEditJob: React.FC = () => {
                                   <div>
                                     <label className="text-xs text-gray-700 mb-1 block">Minimum Salary (PHP)</label>
                                     <input
-                                      type="number"
-                                      min="0"
-                                      step="1000"
+                                      type="text"
+                                      onChange={(e) => {
+                                        const formatted = formatNumberWithCommas(e.target.value);
+                                        e.target.value = formatted;
+                                      }}
                                       className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                      placeholder="e.g., 15000"
+                                      placeholder="e.g., 15,000"
                                     />
                                   </div>
                                   <div>
                                     <label className="text-xs text-gray-700 mb-1 block">Maximum Salary (PHP)</label>
                                     <input
-                                      type="number"
-                                      min="0"
-                                      step="1000"
+                                      type="text"
+                                      onChange={(e) => {
+                                        const formatted = formatNumberWithCommas(e.target.value);
+                                        e.target.value = formatted;
+                                      }}
                                       className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                      placeholder="e.g., 25000"
+                                      placeholder="e.g., 25,000"
                                     />
                                   </div>
                                 </div>
                                 <div className="mt-2 flex items-center">
                                   <input
                                     type="checkbox"
+                                    checked={question.isRequired}
+                                    onChange={(e) => {
+                                      const updatedQuestion = { ...PREDEFINED_QUESTIONS[key], isRequired: e.target.checked };
+                                      PREDEFINED_QUESTIONS[key] = updatedQuestion;
+                                    }}
                                     className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                   />
-                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must-have</strong> requirement</span>
+                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must answer</strong> question</span>
                                 </div>
                               </div>
                             ) : question.options ? (
@@ -826,9 +853,14 @@ export const CompanyEditJob: React.FC = () => {
                                 <div className="mt-2 flex items-center">
                                   <input
                                     type="checkbox"
+                                    checked={question.isRequired}
+                                    onChange={(e) => {
+                                      const updatedQuestion = { ...PREDEFINED_QUESTIONS[key], isRequired: e.target.checked };
+                                      PREDEFINED_QUESTIONS[key] = updatedQuestion;
+                                    }}
                                     className="h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                                   />
-                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must-have</strong> requirement</span>
+                                  <span className="ml-2 text-xs text-gray-700">This is a <strong>must answer</strong> question</span>
                                 </div>
                               </div>
                             ) : (
@@ -1093,11 +1125,11 @@ export const CompanyEditJob: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Apply Button */}
+                      {/* Preview Note */}
                       <div className="ml-6">
-                        <button className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
-                          Apply Now
-                        </button>
+                        <div className="bg-gray-100 text-gray-500 px-6 py-3 rounded-lg font-medium cursor-not-allowed">
+                          Apply Button (Preview)
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1139,6 +1171,7 @@ export const CompanyEditJob: React.FC = () => {
                       <ul className="space-y-1 text-sm text-gray-600">
                         <li>Experience Level: {formData.experienceLevel || 'Entry Level'}</li>
                         <li>Positions Available: {formData.positionsAvailable || '1'} position{formData.positionsAvailable !== '1' ? 's' : ''}</li>
+                        {formData.applicationLimit && <li>Application Limit: {formData.applicationLimit} application{formData.applicationLimit !== '1' ? 's' : ''}</li>}
                         {formData.applicationDeadline && <li>Deadline: {new Date(formData.applicationDeadline).toLocaleDateString()}</li>}
                         <li>Target Students: {formData.targetStudentType === 'both' ? 'OJT & Graduated' : formData.targetStudentType === 'ojt' ? 'OJT Students Only' : 'Graduated Students Only'}</li>
                         <li>Status: {formData.status.charAt(0).toUpperCase() + formData.status.slice(1)}</li>

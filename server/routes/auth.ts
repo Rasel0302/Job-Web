@@ -11,7 +11,7 @@ import {
   validateAsiatechEmail,
   validateEmail
 } from '../utils/auth.js';
-import { emailService } from '../services/emailService.js';
+import { EmailService } from '../services/emailService.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -66,7 +66,7 @@ router.post('/register/user', asyncHandler(async (req, res) => {
   );
 
   // Send OTP email
-  const emailSent = await emailService.sendOTP(email, otp, 'registration');
+  const emailSent = await EmailService.sendOTP(email, otp, 'registration');
   
   if (!emailSent) {
     logger.warn(`Failed to send OTP to ${email}`);
@@ -129,7 +129,7 @@ router.post('/register/coordinator', asyncHandler(async (req, res) => {
   );
 
   // Send OTP email
-  await emailService.sendOTP(email, otp, 'coordinator registration');
+  await EmailService.sendOTP(email, otp, 'coordinator registration');
 
   res.status(201).json({
     message: 'Coordinator registered successfully. Please verify your email and wait for admin approval.',
@@ -222,7 +222,7 @@ router.post('/register/company', asyncHandler(async (req, res) => {
   );
 
   // Send OTP email
-  await emailService.sendOTP(email, otp, 'company registration');
+  await EmailService.sendOTP(email, otp, 'company registration');
 
   res.status(201).json({
     message: 'Company registered successfully. Please verify your email to continue.',
@@ -286,7 +286,7 @@ router.post('/register/admin', asyncHandler(async (req, res) => {
   );
 
   // Send OTP email
-  await emailService.sendOTP(email, otp, 'admin registration');
+  await EmailService.sendOTP(email, otp, 'admin registration');
 
   logger.info(`New admin registration: ${email}`);
 
@@ -427,7 +427,7 @@ router.post('/verify-otp', asyncHandler(async (req, res) => {
     // Send welcome email (only for non-admin roles - admins get it after approval)
     if (userRole !== 'admin') {
       try {
-        await emailService.sendWelcomeEmail(email, email.split('@')[0], userRole);
+        await EmailService.sendWelcomeEmail(email, email.split('@')[0], userRole);
       } catch (emailError) {
         console.warn('Failed to send welcome email:', emailError);
         // Don't fail the verification if email sending fails
@@ -599,7 +599,7 @@ router.post('/resend-otp', asyncHandler(async (req, res) => {
   );
 
   // Send OTP email
-  const emailSent = await emailService.sendOTP(email, otp, purpose);
+  const emailSent = await EmailService.sendOTP(email, otp, purpose);
 
   res.json({
     message: 'OTP sent successfully',
@@ -659,7 +659,7 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
   );
 
   // Send OTP email
-  await emailService.sendOTP(email, otp, 'password reset');
+  await EmailService.sendOTP(email, otp, 'password reset');
 
   res.json({
     message: 'If the email exists, a reset code has been sent.',

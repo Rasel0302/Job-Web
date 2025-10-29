@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { userAPI } from '../services/api';
 import { toast } from 'react-hot-toast';
 import { ProfilePhotoUpload } from '../components/ProfilePhotoUpload';
+import { EmploymentHistory } from '../components/EmploymentHistory';
 import { 
   UserCircleIcon, 
   PencilIcon, 
@@ -635,6 +636,9 @@ export const Profile: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Employment History */}
+      <EmploymentHistory />
     </div>
   );
 

@@ -87,13 +87,18 @@ export const JobDetails: React.FC = () => {
     if (!job.min_salary && !job.max_salary) return 'Salary not specified';
     
     const currency = job.currency || 'PHP';
-    if (job.min_salary && job.max_salary) {
-      return `${currency} ${job.min_salary?.toLocaleString()} - ${job.max_salary?.toLocaleString()}`;
-    } else if (job.min_salary) {
-      return `${currency} ${job.min_salary?.toLocaleString()}+`;
-    } else {
-      return `Up to ${currency} ${job.max_salary?.toLocaleString()}`;
+    // Ensure values are numbers before formatting
+    const minSalary = Number(job.min_salary);
+    const maxSalary = Number(job.max_salary);
+    
+    if (minSalary && maxSalary) {
+      return `${currency} ${minSalary.toLocaleString()} - ${maxSalary.toLocaleString()}`;
+    } else if (minSalary) {
+      return `${currency} ${minSalary.toLocaleString()}+`;
+    } else if (maxSalary) {
+      return `Up to ${currency} ${maxSalary.toLocaleString()}`;
     }
+    return 'Salary not specified';
   };
 
   const getTimeAgo = (dateString: string) => {
@@ -213,7 +218,10 @@ export const JobDetails: React.FC = () => {
               <div className="flex items-center space-x-6 text-sm text-gray-600">
                 <span className="flex items-center">
                   <UserGroupIcon className="h-4 w-4 mr-1" />
-                  {job.application_count || 0} applications
+                  {job.application_limit 
+                    ? `${job.application_count || 0}/${job.application_limit} applications`
+                    : `${job.application_count || 0} applications`
+                  }
                 </span>
                 <span>{job.positions_available} position{job.positions_available !== 1 ? 's' : ''} available</span>
                 {job.average_rating && Number(job.average_rating) > 0 && (
@@ -253,24 +261,28 @@ export const JobDetails: React.FC = () => {
                       Edit Job
                     </Link>
                   )}
-                  <Link
-                    to={`/jobs/${job.id}/applications`}
-                    className="inline-flex items-center justify-center bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
-                  >
-                    <EyeIcon className="h-5 w-5 mr-2" />
-                    Review Applications
-                  </Link>
+                  {job.created_by_type === 'coordinator' && job.created_by_id === user.id && (
+                    <Link
+                      to={`/jobs/${job.id}/applications`}
+                      className="inline-flex items-center justify-center bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
+                    >
+                      <EyeIcon className="h-5 w-5 mr-2" />
+                      Review Applications
+                    </Link>
+                  )}
                 </div>
               ) : user?.role === 'company' ? (
                 <div className="flex flex-col space-y-3">
-                  {/* Business owners can only comment, not accept applicants */}
-                  <Link
-                    to={`/jobs/${job.id}/applications`}
-                    className="inline-flex items-center justify-center bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
-                  >
-                    <EyeIcon className="h-5 w-5 mr-2" />
-                    View Applications
-                  </Link>
+                  {/* Business owners can only view applications for their own job posts */}
+                  {job.created_by_type === 'company' && job.created_by_id === user.id && (
+                    <Link
+                      to={`/jobs/${job.id}/applications`}
+                      className="inline-flex items-center justify-center bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors"
+                    >
+                      <EyeIcon className="h-5 w-5 mr-2" />
+                      View Applications
+                    </Link>
+                  )}
                 </div>
               ) : (
                 <div className="bg-gray-100 text-gray-500 px-8 py-4 rounded-lg font-medium text-lg cursor-not-allowed">

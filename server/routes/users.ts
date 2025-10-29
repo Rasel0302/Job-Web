@@ -4,6 +4,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
 import { uploadSingle } from '../middleware/upload.js';
 import { UploadService } from '../services/uploadService.js';
+import { logger } from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -305,8 +306,10 @@ router.get('/dashboard-stats', authenticate, authorize('user'), asyncHandler(asy
       SELECT COUNT(DISTINCT j.id) as total_matches
       FROM jobs j
       LEFT JOIN user_courses uc ON uc.user_id = ?
+      LEFT JOIN courses c ON uc.course_id = c.id
+      LEFT JOIN job_categories jc ON c.course_name = jc.course_name AND j.category = jc.category_name
       WHERE j.status = 'active'
-        AND (j.course_id = uc.course_id OR j.course_id IS NULL)
+        AND (jc.category_name IS NOT NULL OR uc.course_id IS NULL)
     `, [req.user!.id]);
     matchCount = ((matchStats as any[])[0]?.total_matches || 0);
   } catch (error) {
@@ -376,9 +379,11 @@ router.get('/coordinators/approved', asyncHandler(async (req, res) => {
   const [coordinators] = await connection.execute(`
     SELECT 
       c.id,
+      c.email,
       cp.first_name,
       cp.last_name,
       cp.designated_course,
+      cp.contact_number,
       cp.profile_photo,
       cp.average_rating,
       cp.rating_count
@@ -494,6 +499,77 @@ router.get('/my-ratings', authenticate, authorize('user'), asyncHandler(async (r
     ratings: processedRatings,
     statistics: (stats as any[])[0]
   });
+}));
+
+// Get user employment history
+router.get('/employment-history', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const connection = getConnection();
+  
+  try {
+    const [employmentHistory] = await connection.execute(`
+      SELECT 
+        ues.*,
+        j.title as job_title,
+        j.description as job_description,
+        CASE 
+          WHEN ues.employer_type = 'company' THEN cp.company_name
+          WHEN ues.employer_type = 'coordinator' THEN CONCAT(coord_p.first_name, ' ', coord_p.last_name)
+        END as employer_display_name,
+        CASE 
+          WHEN ues.employer_type = 'company' THEN cp.profile_photo
+          WHEN ues.employer_type = 'coordinator' THEN coord_p.profile_photo
+        END as employer_photo
+      FROM user_employment_status ues
+      JOIN jobs j ON ues.job_id = j.id
+      LEFT JOIN company_profiles cp ON ues.employer_type = 'company' AND ues.employer_id = cp.company_id
+      LEFT JOIN coordinator_profiles coord_p ON ues.employer_type = 'coordinator' AND ues.employer_id = coord_p.coordinator_id
+      WHERE ues.user_id = ?
+      ORDER BY ues.hired_date DESC
+    `, [req.user!.id]);
+
+    // Process employer photos
+    const processedHistory = (employmentHistory as any[]).map(record => ({
+      ...record,
+      employer_photo_url: UploadService.getPhotoUrl(record.employer_photo)
+    }));
+
+    res.json(processedHistory);
+
+  } catch (error) {
+    logger.error('Error fetching employment history:', error);
+    res.status(500).json({ message: 'Failed to fetch employment history' });
+  }
+}));
+
+// Update employment status (end contract)
+router.patch('/employment/:id/end-contract', authenticate, authorize('user'), asyncHandler(async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const connection = getConnection();
+  
+  try {
+    // Verify ownership and update
+    const [result] = await connection.execute(`
+      UPDATE user_employment_status 
+      SET employment_status = 'contract_ended',
+          contract_end_date = NOW(),
+          updated_at = NOW()
+      WHERE id = ? AND user_id = ? AND employment_status = 'active'
+    `, [id, req.user!.id]);
+
+    const affectedRows = (result as any).affectedRows;
+    
+    if (affectedRows === 0) {
+      return res.status(404).json({ message: 'Employment record not found or already ended' });
+    }
+
+    logger.info(`Employment contract ${id} ended by user ${req.user!.id}`);
+
+    res.json({ message: 'Contract ended successfully' });
+
+  } catch (error) {
+    logger.error('Error ending employment contract:', error);
+    res.status(500).json({ message: 'Failed to end contract' });
+  }
 }));
 
 export default router;

@@ -32,6 +32,7 @@ import { CoordinatorManageJobs } from './pages/coordinator/CoordinatorManageJobs
 import { CoordinatorEditJob } from './pages/coordinator/CoordinatorEditJob';
 import { CoordinatorInviteCompany } from './pages/coordinator/CoordinatorInviteCompany';
 import { ReviewApplications } from './pages/ReviewApplications';
+import { ScheduledInterviews } from './pages/ScheduledInterviews';
 import { VerifyOTP } from './pages/auth/VerifyOTP';
 import { Dashboard } from './pages/Dashboard';
 import { Profile } from './pages/Profile';
@@ -127,6 +128,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={['coordinator', 'company']}>
                   <Layout><ReviewApplications /></Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/interviews/scheduled" 
+              element={
+                <ProtectedRoute allowedRoles={['coordinator', 'company']}>
+                  <Layout><ScheduledInterviews /></Layout>
                 </ProtectedRoute>
               } 
             />

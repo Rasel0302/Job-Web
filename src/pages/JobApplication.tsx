@@ -172,7 +172,7 @@ export const JobApplication: React.FC = () => {
         // Check if all required screening questions are answered
         if (!job?.screeningQuestions) return true;
         return job.screeningQuestions.every(q => 
-          !q.is_required || applicationData.screeningAnswers[q.id]
+          !Boolean(q.is_required) || applicationData.screeningAnswers[q.id]
         );
       default:
         return false;
@@ -542,7 +542,7 @@ export const JobApplication: React.FC = () => {
                 <div className="mb-4">
                   <h4 className="text-sm font-medium text-gray-900">
                     Question {index + 1}
-                    {question.is_required && <span className="text-red-500 ml-1">*</span>}
+                    {Boolean(question.is_required) && <span className="text-red-500 ml-1">*</span>}
                   </h4>
                   <p className="text-sm text-gray-700 mt-1">{question.question_text}</p>
                 </div>
@@ -586,7 +586,7 @@ export const JobApplication: React.FC = () => {
                     rows={3}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                     placeholder="Type your answer here..."
-                    required={question.is_required}
+                    required={Boolean(question.is_required)}
                   />
                 )}
               </div>

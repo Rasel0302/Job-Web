@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate, authenticateForProfileCompletion, authorize, AuthRequest } from '../middleware/auth.js';
 import { getConnection } from '../config/database.js';
-import { emailService } from '../services/emailService.js';
+import { EmailService } from '../services/emailService.js';
 import { UploadService } from '../services/uploadService.js';
 
 const router = express.Router();
@@ -36,7 +36,14 @@ router.get('/profile', authenticateForProfileCompletion, asyncHandler(async (req
     return res.status(404).json({ message: 'Coordinator not found' });
   }
 
-  res.json((coordinatorProfile as any[])[0]);
+  const profile = (coordinatorProfile as any[])[0];
+  
+  // Add profile photo URL if it exists
+  if (profile.profile_photo) {
+    profile.profile_photo_url = UploadService.getPhotoUrl(profile.profile_photo);
+  }
+
+  res.json(profile);
 }));
 
 // Complete coordinator profile (used during registration)
@@ -195,15 +202,15 @@ router.post('/invite-company', authenticate, authorize('coordinator'), asyncHand
 
   // Send invitation email
   try {
-    await emailService.sendCompanyInvitation({
+    const invitationLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/register/company?invitation=${token}`;
+    
+    await EmailService.sendCompanyInvitation({
       recipientEmail: email,
       recipientName: 'Company Representative',
       coordinatorName,
       coordinatorEmail: coordinator?.email || '',
       course: coordinator?.designated_course || '',
-      message,
-      invitationToken: token,
-      expirationDate: expiresAt
+      invitationLink
     });
 
     res.json({ 
@@ -440,7 +447,7 @@ router.get('/:id/ratings', asyncHandler(async (req, res) => {
     }
 
     // Try to get ratings, but handle if table doesn't exist
-    let ratings = [];
+    let ratings: any[] = [];
     try {
       const [ratingsResult] = await connection.execute(`
         SELECT 
@@ -468,7 +475,7 @@ router.get('/:id/ratings', asyncHandler(async (req, res) => {
     }
 
     // Process ratings to include photo URLs
-    const processedRatings = ratings.map(rating => ({
+    const processedRatings = ratings.map((rating: any) => ({
       ...rating,
       profile_photo: rating.profile_photo ? UploadService.getPhotoUrl(rating.profile_photo) : null
     }));
